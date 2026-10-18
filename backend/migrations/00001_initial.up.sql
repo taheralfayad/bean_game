@@ -1,0 +1,68 @@
+CREATE TABLE beans (
+	id SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	name VARCHAR(40) NOT NULL UNIQUE,
+	image_link VARCHAR(255)
+);
+
+CREATE TABLE beans_payout (
+	bean_id SMALLINT NOT NULL REFERENCES beans(id),
+	num_cards SMALLINT NOT NULL,
+	coins SMALLINT NOT NULL
+);
+
+CREATE TABLE decks (
+	id SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY
+);
+
+CREATE TABLE beans_decks (
+	id SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	bean_id SMALLINT NOT NULL REFERENCES beans(id),
+	deck_id SMALLINT NOT NULL REFERENCES decks(id),
+	card_count NOT NULL SMALLINT
+);
+
+CREATE TABLE game_variants (
+	id SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	slug VARCHAR(40) NOT NULL UNIQUE CHECK (slug ~ '^[a-z0-9_]+$'),
+	name VARCHAR(80) NOT NULL,
+	min_players SMALLINT NOT NULL,
+	max_players SMALLINT NOT NULL,
+	deck_id SMALLINT REFERENCES decks(id),
+	end_of_turn_draw_count SMALLINT NOT NULL,
+	CHECK (min_players <= max_players)
+);
+
+CREATE TABLE games (
+	id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	shuffle_number SMALLINT NOT NULL DEFAULT 1 CHECK (shuffle_number BETWEEN 1 AND 3),
+	current_seat SMALLINT NOT NULL DEFAULT 1 CHECK (current_seat >= 1),
+	current_phase SMALLINT NOT NULL DEFAULT 1 CHECK (current_phase BETWEEN 1 AND 4),
+	variant_id SMALLINT NOT NULL REFERENCES game_variants(id)
+);
+
+CREATE TABLE players (
+	id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY
+);
+
+CREATE TABLE games_players (
+	id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	game_id BIGINT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+	player_id BIGINT NOT NULL references players(id),
+	seat SMALLINT NOT NULL
+);
+
+CREATE TABLE fields (
+	id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	game_player_id BIGINT NOT NULL REFERENCES games_players(id) ON DELETE CASCADE,
+	bean_id SMALLINT NOT NULL REFERENCES beans(id)
+)
+
+CREATE TABLE cards (
+	id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	game_id BIGINT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+	bean_id SMALLINT NOT NULL REFERENCES beans(id),
+	location VARCHAR(10) NOT NULL CHECK (location IN ('draw', 'discard', 'hand', 'field', 'redeemed', 'trade')),
+	position SMALLINT,
+	game_player_id BIGINT REFERENCES games_players(id),
+	field_id BIGINT REFERENCES fields(id)
+);
