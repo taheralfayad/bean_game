@@ -31,13 +31,18 @@ type Image struct {
 	Size   int64
 }
 
+type beanStore interface {
+	InsertBean(ctx context.Context, name string, imageKey *string) (*Bean, error)
+	DeleteBean(ctx context.Context, id uint16) (string, error)
+}
+
 type Service struct {
-	store    *Store
+	store    beanStore
 	blobs    blobs.Storage
 	maxBytes int64
 }
 
-func NewService(store *Store, blobsClient blobs.Storage, maxBytes int64) *Service {
+func NewService(store beanStore, blobsClient blobs.Storage, maxBytes int64) *Service {
 	return &Service{
 		store:    store,
 		blobs:    blobsClient,
