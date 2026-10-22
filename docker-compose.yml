@@ -10,6 +10,20 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      storage:
+        condition: service_started
+
+  storage:
+    image: versity/versitygw:v1.9.0
+    restart: always
+    command: ["--port", ":7070", "--health", "/healthz", "posix", "/data"]
+    environment:
+      ROOT_ACCESS_KEY: ${S3_ACCESS_KEY}
+      ROOT_SECRET_KEY: ${S3_SECRET_KEY}
+    ports:
+      - "7070:7070"
+    volumes:
+      - ./backend/storage:/data
 
   frontend:
     build: ./frontend

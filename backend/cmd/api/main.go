@@ -8,6 +8,7 @@ import (
 
 	"github.com/taheralfayad/bean_game/backend/internal/config"
 	"github.com/taheralfayad/bean_game/backend/internal/db"
+	filess3 "github.com/taheralfayad/bean_game/backend/internal/files/s3"
 )
 
 func main() {
@@ -16,11 +17,18 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	database, err := db.Open(context.Background(), cfg.DB)
+	ctx := context.Background()
+
+	database, err := db.Open(ctx, cfg.DB)
 	if err != nil {
 		log.Fatalf("connect to database: %v", err)
 	}
 	defer database.Close()
+
+	fileStorage := filess3.New(cfg.Files)
+	if err := fileStorage.EnsureBucket(ctx); err != nil {
+		log.Fatalf("ensure files bucket: %v", err)
+	}
 
 	r := gin.Default()
 

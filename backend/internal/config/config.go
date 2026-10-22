@@ -6,12 +6,24 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type Config struct {
-	DB DBConfig
+	DB    DBConfig
+	Files FilesConfig
+}
+
+type FilesConfig struct {
+	Endpoint  string
+	Region    string
+	Bucket    string
+	AccessKey string
+	SecretKey string
+	PathStyle bool
+	PublicURL string
 }
 
 type DBConfig struct {
@@ -41,6 +53,11 @@ func (c DBConfig) DSN() string {
 }
 
 func Load() (*Config, error) {
+	pathStyle, err := strconv.ParseBool(envOr("S3_PATH_STYLE", "false"))
+	if err != nil {
+		return nil, fmt.Errorf("parse S3_PATH_STYLE: %w", err)
+	}
+
 	cfg := &Config{
 		DB: DBConfig{
 			Host:     os.Getenv("POSTGRES_HOST"),
@@ -54,6 +71,15 @@ func Load() (*Config, error) {
 			MaxIdleConns:    5,
 			ConnMaxLifetime: 30 * time.Minute,
 		},
+		Files: FilesConfig{
+			Endpoint:  os.Getenv("S3_ENDPOINT"),
+			Region:    os.Getenv("S3_REGION"),
+			Bucket:    os.Getenv("S3_BUCKET"),
+			AccessKey: os.Getenv("S3_ACCESS_KEY"),
+			SecretKey: os.Getenv("S3_SECRET_KEY"),
+			PathStyle: pathStyle,
+			PublicURL: strings.TrimSuffix(os.Getenv("S3_PUBLIC_URL"), "/"),
+		},
 	}
 
 	var missing []string
@@ -62,6 +88,8 @@ func Load() (*Config, error) {
 		"POSTGRES_USER":     cfg.DB.User,
 		"POSTGRES_PASSWORD": cfg.DB.Password,
 		"POSTGRES_DB":       cfg.DB.Name,
+		"S3_REGION":         cfg.Files.Region,
+		"S3_BUCKET":         cfg.Files.Bucket,
 	} {
 		if value == "" {
 			missing = append(missing, name)
@@ -70,6 +98,10 @@ func Load() (*Config, error) {
 	if len(missing) > 0 {
 		sort.Strings(missing)
 		return nil, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
+	}
+
+	if (cfg.Files.AccessKey == "") != (cfg.Files.SecretKey == "") {
+		return nil, fmt.Errorf("S3_ACCESS_KEY and S3_SECRET_KEY must be set together")
 	}
 
 	return cfg, nil

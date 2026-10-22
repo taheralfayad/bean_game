@@ -1,3 +1,4 @@
 [build]
   cmd = "go build -o ./tmp/main ./cmd/api"
   bin = "./tmp/main"
+  exclude_dir = ["storage", "tmp"]
