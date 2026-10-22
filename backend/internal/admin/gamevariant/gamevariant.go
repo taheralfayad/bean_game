@@ -1,4 +1,4 @@
-package types
+package gamevariant
 
 type GameVariants struct {
 	Id                 uint16 `json:"id"`
