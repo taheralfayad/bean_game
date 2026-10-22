@@ -8,19 +8,19 @@ type Store struct{ db *sql.DB }
 
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
-func (s *Store) InsertBean(name string, imageLink string) (*Bean, error) {
+func (s *Store) InsertBean(name string, imageFileID *string) (*Bean, error) {
 	var newId uint16
 
 	err := s.db.QueryRow(
 		`
-			INSERT INTO beans (name, image_link)
+			INSERT INTO beans (name, image_file_id)
 			VALUES (
 				$1, $2
 			)
 			RETURNING id 
 		`,
 		name,
-		imageLink,
+		imageFileID,
 	).Scan(&newId)
 
 	if err != nil {
@@ -28,9 +28,8 @@ func (s *Store) InsertBean(name string, imageLink string) (*Bean, error) {
 	}
 
 	return &Bean{
-		Id:        newId,
-		Name:      name,
-		ImageLink: imageLink,
+		Id:          newId,
+		Name:        name,
+		ImageFileID: imageFileID,
 	}, nil
-
 }
