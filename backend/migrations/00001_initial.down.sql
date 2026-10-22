@@ -1,11 +1,10 @@
-DROP TABLE beans_payout;
-DROP TABLE beans_decks;
 DROP TABLE cards;
 DROP TABLE fields;
-DROP TABLE beans_decks;
-DROP TABLE beans_payout;
 DROP TABLE games_players;
-DROP TABLE players;
 DROP TABLE games;
 DROP TABLE game_variants;
+DROP TABLE beans_payout;
+DROP TABLE beans_decks;
 DROP TABLE decks;
+DROP TABLE players;
+DROP TABLE beans;
