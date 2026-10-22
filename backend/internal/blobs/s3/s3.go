@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -15,16 +14,15 @@ import (
 	"github.com/aws/smithy-go"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
+	"github.com/taheralfayad/bean_game/backend/internal/blobs"
 	"github.com/taheralfayad/bean_game/backend/internal/config"
-	"github.com/taheralfayad/bean_game/backend/internal/files"
 )
 
-var _ files.Storage = (*Storage)(nil)
+var _ blobs.Storage = (*Storage)(nil)
 
 type Storage struct {
-	client    *awss3.Client
-	presigner *awss3.PresignClient
-	bucket    string
+	client *awss3.Client
+	bucket string
 }
 
 func New(cfg config.FilesConfig) *Storage {
@@ -41,9 +39,8 @@ func New(cfg config.FilesConfig) *Storage {
 	})
 
 	return &Storage{
-		client:    client,
-		presigner: awss3.NewPresignClient(client),
-		bucket:    cfg.Bucket,
+		client: client,
+		bucket: cfg.Bucket,
 	}
 }
 
@@ -102,17 +99,6 @@ func (s *Storage) Delete(ctx context.Context, key string) error {
 		return fmt.Errorf("delete object %q: %w", key, err)
 	}
 	return nil
-}
-
-func (s *Storage) PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error) {
-	req, err := s.presigner.PresignGetObject(ctx, &awss3.GetObjectInput{
-		Bucket: aws.String(s.bucket),
-		Key:    aws.String(key),
-	}, awss3.WithPresignExpires(ttl))
-	if err != nil {
-		return "", fmt.Errorf("presign object %q: %w", key, err)
-	}
-	return req.URL, nil
 }
 
 func isNotFound(err error) bool {

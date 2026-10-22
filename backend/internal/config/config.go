@@ -17,13 +17,14 @@ type Config struct {
 }
 
 type FilesConfig struct {
-	Endpoint  string
-	Region    string
-	Bucket    string
-	AccessKey string
-	SecretKey string
-	PathStyle bool
-	PublicURL string
+	Endpoint       string
+	Region         string
+	Bucket         string
+	AccessKey      string
+	SecretKey      string
+	PathStyle      bool
+	PublicURL      string
+	MaxUploadBytes int64
 }
 
 type DBConfig struct {
@@ -58,6 +59,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("parse S3_PATH_STYLE: %w", err)
 	}
 
+	maxUploadBytes, err := strconv.ParseInt(envOr("UPLOAD_MAX_BYTES", "8388608"), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse UPLOAD_MAX_BYTES: %w", err)
+	}
+	if maxUploadBytes <= 0 {
+		return nil, fmt.Errorf("UPLOAD_MAX_BYTES must be positive")
+	}
+
 	cfg := &Config{
 		DB: DBConfig{
 			Host:     os.Getenv("POSTGRES_HOST"),
@@ -79,6 +88,8 @@ func Load() (*Config, error) {
 			SecretKey: os.Getenv("S3_SECRET_KEY"),
 			PathStyle: pathStyle,
 			PublicURL: strings.TrimSuffix(os.Getenv("S3_PUBLIC_URL"), "/"),
+
+			MaxUploadBytes: maxUploadBytes,
 		},
 	}
 

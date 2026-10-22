@@ -6,9 +6,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/taheralfayad/bean_game/backend/internal/admin/bean"
+	blobss3 "github.com/taheralfayad/bean_game/backend/internal/blobs/s3"
 	"github.com/taheralfayad/bean_game/backend/internal/config"
 	"github.com/taheralfayad/bean_game/backend/internal/db"
-	filess3 "github.com/taheralfayad/bean_game/backend/internal/files/s3"
 )
 
 func main() {
@@ -25,12 +26,17 @@ func main() {
 	}
 	defer database.Close()
 
-	fileStorage := filess3.New(cfg.Files)
-	if err := fileStorage.EnsureBucket(ctx); err != nil {
-		log.Fatalf("ensure files bucket: %v", err)
+	blobStorage := blobss3.New(cfg.Files)
+	if err := blobStorage.EnsureBucket(ctx); err != nil {
+		log.Fatalf("ensure blobs bucket: %v", err)
 	}
 
+	beanHandler := bean.NewHandler(
+		bean.NewService(bean.NewStore(database), blobStorage, cfg.Files.MaxUploadBytes),
+	)
+
 	r := gin.Default()
+	beanHandler.Register(r)
 
 	if err := r.Run(); err != nil {
 		log.Fatalf("server failed: %v", err)
