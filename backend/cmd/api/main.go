@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/taheralfayad/bean_game/backend/internal/admin/bean"
+	"github.com/taheralfayad/bean_game/backend/internal/admin/deck"
 	blobss3 "github.com/taheralfayad/bean_game/backend/internal/blobs/s3"
 	"github.com/taheralfayad/bean_game/backend/internal/config"
 	"github.com/taheralfayad/bean_game/backend/internal/db"
@@ -35,8 +36,13 @@ func main() {
 		bean.NewService(bean.NewStore(database), blobStorage, cfg.Files.MaxUploadBytes),
 	)
 
+	deckHandler := deck.NewHandler(
+		deck.NewService(deck.NewStore(database)),
+	)
+
 	r := gin.Default()
 	beanHandler.Register(r)
+	deckHandler.Register(r)
 
 	if err := r.Run(); err != nil {
 		log.Fatalf("server failed: %v", err)
