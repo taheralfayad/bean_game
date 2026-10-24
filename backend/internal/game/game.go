@@ -1,4 +1,4 @@
-package types
+package game
 
 type Game struct {
 	Id            uint64  `json:"id"`
