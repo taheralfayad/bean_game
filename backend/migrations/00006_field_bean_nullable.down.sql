@@ -1,0 +1,1 @@
+ALTER TABLE fields ALTER COLUMN bean_id SET NOT NULL;
