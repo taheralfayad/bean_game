@@ -3,6 +3,7 @@ package bean
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -13,15 +14,17 @@ import (
 type fakeStore struct {
 	insertName     string
 	insertImageKey *string
+	insertPayouts  []Payout
 	deleteID       uint16
 	deleteImageKey string
 	deleteCalled   bool
 }
 
-func (f *fakeStore) InsertBean(ctx context.Context, name string, imageKey *string) (*Bean, error) {
+func (f *fakeStore) InsertBean(ctx context.Context, name string, imageKey *string, payouts []Payout) (*Bean, error) {
 	f.insertName = name
 	f.insertImageKey = imageKey
-	return &Bean{Id: 7, Name: name, ImageKey: imageKey}, nil
+	f.insertPayouts = payouts
+	return &Bean{Id: 7, Name: name, ImageKey: imageKey, Payouts: payouts}, nil
 }
 
 func (f *fakeStore) DeleteBean(ctx context.Context, id uint16) (string, error) {
@@ -72,7 +75,7 @@ func TestCreateBean(t *testing.T) {
 	created, err := service.Create(context.Background(), "coffee", Image{
 		Reader: bytes.NewReader(pngData),
 		Size:   int64(len(pngData)),
-	})
+	}, []Payout{{NumCards: 2, Coins: 1}, {NumCards: 3, Coins: 2}})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -92,6 +95,12 @@ func TestCreateBean(t *testing.T) {
 	if store.insertImageKey == nil || *store.insertImageKey != *created.ImageKey {
 		t.Errorf("inserted image key = %v, want %q", store.insertImageKey, *created.ImageKey)
 	}
+	if len(store.insertPayouts) != 2 || store.insertPayouts[0] != (Payout{NumCards: 2, Coins: 1}) || store.insertPayouts[1] != (Payout{NumCards: 3, Coins: 2}) {
+		t.Errorf("inserted payouts = %v, want [{2 1} {3 2}]", store.insertPayouts)
+	}
+	if len(created.Payouts) != 2 || created.Payouts[1] != (Payout{NumCards: 3, Coins: 2}) {
+		t.Errorf("created payouts = %v, want [{2 1} {3 2}]", created.Payouts)
+	}
 
 	if !regexp.MustCompile(`^images/[0-9a-f-]{36}\.png$`).MatchString(blobStore.putKey) {
 		t.Errorf("blob key = %q, want images/<uuid>.png", blobStore.putKey)
@@ -107,6 +116,39 @@ func TestCreateBean(t *testing.T) {
 	}
 	if !bytes.Equal(blobStore.putData, pngData) {
 		t.Errorf("stored data = %v, want %v", blobStore.putData, pngData)
+	}
+}
+
+func TestCreateBeanPayoutValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		payouts []Payout
+		wantErr error
+	}{
+		{name: "no payouts", payouts: nil, wantErr: ErrNoPayouts},
+		{name: "empty payouts", payouts: []Payout{}, wantErr: ErrNoPayouts},
+		{name: "zero num cards", payouts: []Payout{{NumCards: 0, Coins: 1}}, wantErr: ErrInvalidNumCards},
+		{name: "zero coins", payouts: []Payout{{NumCards: 2, Coins: 0}}, wantErr: ErrInvalidCoins},
+		{name: "duplicate num cards", payouts: []Payout{{NumCards: 2, Coins: 1}, {NumCards: 2, Coins: 2}}, wantErr: ErrDuplicatePayout},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeStore{}
+			blobStore := &fakeBlobs{}
+			service := NewService(store, blobStore, 1<<20)
+
+			_, err := service.Create(context.Background(), "coffee", Image{
+				Reader: bytes.NewReader(pngData),
+				Size:   int64(len(pngData)),
+			}, tt.payouts)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Create() error = %v, want %v", err, tt.wantErr)
+			}
+			if blobStore.putCalls != 0 {
+				t.Errorf("blob put calls = %d, want 0", blobStore.putCalls)
+			}
+		})
 	}
 }
 
@@ -146,7 +188,7 @@ func TestCreateBeanSupportedImageTypes(t *testing.T) {
 			created, err := service.Create(context.Background(), "bean", Image{
 				Reader: bytes.NewReader(tt.data),
 				Size:   int64(len(tt.data)),
-			})
+			}, []Payout{{NumCards: 2, Coins: 1}})
 			if err != nil {
 				t.Fatalf("Create() error = %v", err)
 			}

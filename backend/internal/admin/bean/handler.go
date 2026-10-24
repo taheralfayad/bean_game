@@ -17,8 +17,9 @@ type Handler struct {
 }
 
 type createRequest struct {
-	Name  string `json:"name" binding:"required"`
-	Image string `json:"image" binding:"required"`
+	Name    string   `json:"name" binding:"required"`
+	Image   string   `json:"image" binding:"required"`
+	Payouts []Payout `json:"payouts" binding:"required,min=1,dive"`
 }
 
 func NewHandler(service *Service) *Handler { return &Handler{service: service} }
@@ -38,7 +39,7 @@ func (h *Handler) create(c *gin.Context) {
 			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": ErrImageTooLarge.Error()})
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name and image are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name, image, and payouts are required"})
 		return
 	}
 
@@ -52,6 +53,7 @@ func (h *Handler) create(c *gin.Context) {
 		c.Request.Context(),
 		req.Name,
 		Image{Reader: bytes.NewReader(image), Size: int64(len(image))},
+		req.Payouts,
 	)
 	if err != nil {
 		h.writeError(c, err)
@@ -81,6 +83,11 @@ func (h *Handler) writeError(c *gin.Context, err error) {
 
 	switch {
 	case errors.Is(err, ErrEmptyImage):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+	case errors.Is(err, ErrNoPayouts),
+		errors.Is(err, ErrInvalidNumCards),
+		errors.Is(err, ErrInvalidCoins),
+		errors.Is(err, ErrDuplicatePayout):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 	case errors.Is(err, ErrImageTooLarge):
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})

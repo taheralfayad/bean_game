@@ -17,6 +17,10 @@ var (
 	ErrEmptyImage       = errors.New("image is empty")
 	ErrImageTooLarge    = errors.New("image too large")
 	ErrUnsupportedImage = errors.New("unsupported image type")
+	ErrNoPayouts        = errors.New("bean must have at least one payout")
+	ErrInvalidNumCards  = errors.New("payout num_cards must be greater than zero")
+	ErrInvalidCoins     = errors.New("payout coins must be greater than zero")
+	ErrDuplicatePayout  = errors.New("bean contains a duplicate payout num_cards")
 )
 
 var extByMIME = map[string]string{
@@ -32,7 +36,7 @@ type Image struct {
 }
 
 type beanStore interface {
-	InsertBean(ctx context.Context, name string, imageKey *string) (*Bean, error)
+	InsertBean(ctx context.Context, name string, imageKey *string, payouts []Payout) (*Bean, error)
 	DeleteBean(ctx context.Context, id uint16) (string, error)
 }
 
@@ -50,7 +54,10 @@ func NewService(store beanStore, blobsClient blobs.Storage, maxBytes int64) *Ser
 	}
 }
 
-func (s *Service) Create(ctx context.Context, name string, image Image) (*Bean, error) {
+func (s *Service) Create(ctx context.Context, name string, image Image, payouts []Payout) (*Bean, error) {
+	if err := validatePayouts(payouts); err != nil {
+		return nil, err
+	}
 	if image.Size <= 0 {
 		return nil, ErrEmptyImage
 	}
@@ -84,7 +91,7 @@ func (s *Service) Create(ctx context.Context, name string, image Image) (*Bean, 
 		return nil, err
 	}
 
-	created, err := s.store.InsertBean(ctx, name, &key)
+	created, err := s.store.InsertBean(ctx, name, &key, payouts)
 	if err != nil {
 		if cleanupErr := s.blobs.Delete(ctx, key); cleanupErr != nil {
 			return nil, errors.Join(err, fmt.Errorf("cleanup object: %w", cleanupErr))
@@ -93,6 +100,28 @@ func (s *Service) Create(ctx context.Context, name string, image Image) (*Bean, 
 	}
 
 	return created, nil
+}
+
+func validatePayouts(payouts []Payout) error {
+	if len(payouts) == 0 {
+		return ErrNoPayouts
+	}
+
+	seen := make(map[uint16]struct{}, len(payouts))
+	for _, payout := range payouts {
+		if payout.NumCards == 0 {
+			return ErrInvalidNumCards
+		}
+		if payout.Coins == 0 {
+			return ErrInvalidCoins
+		}
+		if _, ok := seen[payout.NumCards]; ok {
+			return ErrDuplicatePayout
+		}
+		seen[payout.NumCards] = struct{}{}
+	}
+
+	return nil
 }
 
 func (s *Service) Delete(ctx context.Context, id uint16) error {

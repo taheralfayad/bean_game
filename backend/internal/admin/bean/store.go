@@ -11,10 +11,16 @@ type Store struct{ db *sql.DB }
 
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
-func (s *Store) InsertBean(ctx context.Context, name string, imageKey *string) (*Bean, error) {
+func (s *Store) InsertBean(ctx context.Context, name string, imageKey *string, payouts []Payout) (*Bean, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	var newId uint16
 
-	err := s.db.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		INSERT INTO beans (name, image_key)
 		VALUES ($1, $2)
 		RETURNING id
@@ -23,10 +29,24 @@ func (s *Store) InsertBean(ctx context.Context, name string, imageKey *string) (
 		return nil, fmt.Errorf("insert bean: %w", err)
 	}
 
+	for _, payout := range payouts {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO beans_payout (bean_id, num_cards, coins)
+			VALUES ($1, $2, $3)
+		`, newId, payout.NumCards, payout.Coins); err != nil {
+			return nil, fmt.Errorf("insert bean payout: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit bean: %w", err)
+	}
+
 	return &Bean{
 		Id:       newId,
 		Name:     name,
 		ImageKey: imageKey,
+		Payouts:  payouts,
 	}, nil
 }
 
