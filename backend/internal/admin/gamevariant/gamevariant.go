@@ -1,6 +1,6 @@
 package gamevariant
 
-type GameVariants struct {
+type GameVariant struct {
 	Id                 uint16 `json:"id"`
 	Slug               string `json:"slug"`
 	Name               string `json:"name"`
