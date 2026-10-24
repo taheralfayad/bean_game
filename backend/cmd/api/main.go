@@ -6,12 +6,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/taheralfayad/bean_game/backend/internal/admin/bean"
-	"github.com/taheralfayad/bean_game/backend/internal/admin/deck"
-	"github.com/taheralfayad/bean_game/backend/internal/admin/gamevariant"
+	"github.com/taheralfayad/bean_game/backend/internal/bean"
 	blobss3 "github.com/taheralfayad/bean_game/backend/internal/blobs/s3"
 	"github.com/taheralfayad/bean_game/backend/internal/config"
 	"github.com/taheralfayad/bean_game/backend/internal/db"
+	"github.com/taheralfayad/bean_game/backend/internal/deck"
+	"github.com/taheralfayad/bean_game/backend/internal/gamevariant"
 )
 
 func main() {
