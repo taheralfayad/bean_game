@@ -8,6 +8,7 @@ import (
 
 	"github.com/taheralfayad/bean_game/backend/internal/admin/bean"
 	"github.com/taheralfayad/bean_game/backend/internal/admin/deck"
+	"github.com/taheralfayad/bean_game/backend/internal/admin/gamevariant"
 	blobss3 "github.com/taheralfayad/bean_game/backend/internal/blobs/s3"
 	"github.com/taheralfayad/bean_game/backend/internal/config"
 	"github.com/taheralfayad/bean_game/backend/internal/db"
@@ -40,9 +41,14 @@ func main() {
 		deck.NewService(deck.NewStore(database)),
 	)
 
+	gamevariantHandler := gamevariant.NewHandler(
+		gamevariant.NewService(gamevariant.NewStore(database)),
+	)
+
 	r := gin.Default()
 	beanHandler.Register(r)
 	deckHandler.Register(r)
+	gamevariantHandler.Register(r)
 
 	if err := r.Run(); err != nil {
 		log.Fatalf("server failed: %v", err)
