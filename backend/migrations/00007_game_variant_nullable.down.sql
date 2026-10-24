@@ -1,0 +1,1 @@
+ALTER TABLE games ALTER COLUMN variant_id SET NOT NULL;
