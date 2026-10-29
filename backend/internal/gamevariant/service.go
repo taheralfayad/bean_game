@@ -13,6 +13,8 @@ var (
 	ErrInvalidName      = errors.New("name must be between 1 and 80 characters")
 	ErrInvalidPlayers   = errors.New("min_players must be at least 1 and max_players must be at least min_players")
 	ErrInvalidDrawCount = errors.New("end_of_turn_draw_count must be greater than zero")
+	ErrNoMatch          = errors.New("no game variant matches player count")
+	ErrRangeOverlap     = errors.New("game variant player range overlaps an existing variant")
 )
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9_]+$`)

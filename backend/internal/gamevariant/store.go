@@ -3,7 +3,10 @@ package gamevariant
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type Store struct{ db *sql.DB }
@@ -44,6 +47,23 @@ func (s *Store) ListVariants(ctx context.Context) ([]GameVariant, error) {
 	return variants, nil
 }
 
+func (s *Store) FindByPlayerCount(ctx context.Context, playerCount uint16) (uint16, error) {
+	var id uint16
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM game_variants
+		WHERE $1 BETWEEN min_players AND max_players
+	`, playerCount).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNoMatch
+	}
+	if err != nil {
+		return 0, fmt.Errorf("find game variant: %w", err)
+	}
+
+	return id, nil
+}
+
 func (s *Store) InsertVariant(ctx context.Context, variant GameVariant) (*GameVariant, error) {
 	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO game_variants (slug, name, min_players, max_players, deck_id, end_of_turn_draw_count)
@@ -58,6 +78,10 @@ func (s *Store) InsertVariant(ctx context.Context, variant GameVariant) (*GameVa
 		variant.EndOfTurnDrawCount,
 	).Scan(&variant.Id)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23P01" {
+			return nil, ErrRangeOverlap
+		}
 		return nil, fmt.Errorf("insert game variant: %w", err)
 	}
 

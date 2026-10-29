@@ -1,0 +1,2 @@
+ALTER TABLE game_variants
+DROP CONSTRAINT game_variants_player_range_no_overlap;
