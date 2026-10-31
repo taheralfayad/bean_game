@@ -9,6 +9,7 @@ import (
 
 type gameStore interface {
 	CreateGame(ctx context.Context) (*Game, *Player, error)
+	JoinGame(ctx context.Context, gameId uint64) (*Player, error)
 	CountPlayers(ctx context.Context, gameId uint64) (uint16, error)
 	StartGame(ctx context.Context, gameId uint64, variantId uint16) (*Game, error)
 }
@@ -33,6 +34,21 @@ func NewService(store gameStore, variants variantFinder, publisher eventPublishe
 
 func (s *Service) CreateGame(ctx context.Context) (*Game, *Player, error) {
 	return s.store.CreateGame(ctx)
+}
+
+func (s *Service) JoinGame(ctx context.Context, gameId uint64) (*Player, error) {
+	player, err := s.store.JoinGame(ctx, gameId)
+	if err != nil {
+		return nil, err
+	}
+
+	s.publisher.Publish(gameevents.Event{
+		Topic:   fmt.Sprintf("game:%d", gameId),
+		Type:    "game.player_joined",
+		Payload: player,
+	})
+
+	return player, nil
 }
 
 func (s *Service) StartGame(ctx context.Context, gameId uint64) (*Game, error) {

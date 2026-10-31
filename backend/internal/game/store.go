@@ -53,7 +53,7 @@ func (s *Store) CreateGame(ctx context.Context) (*Game, *Player, error) {
 		return nil, nil, fmt.Errorf("commit game: %w", err)
 	}
 
-	return &game, &Player{Id: playerId}, nil
+	return &game, &Player{Id: playerId, Seat: 1}, nil
 }
 
 func (s *Store) JoinGame(ctx context.Context, gameId uint64) (*Player, error) {
@@ -104,7 +104,7 @@ func (s *Store) JoinGame(ctx context.Context, gameId uint64) (*Player, error) {
 		return nil, fmt.Errorf("commit game: %w", err)
 	}
 
-	return &Player{Id: playerId}, nil
+	return &Player{Id: playerId, Seat: seat}, nil
 }
 
 func (s *Store) CountPlayers(ctx context.Context, gameId uint64) (uint16, error) {

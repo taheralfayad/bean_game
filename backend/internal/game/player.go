@@ -7,7 +7,8 @@ import (
 )
 
 type Player struct {
-	Id int64 `json:"id"`
+	Id   int64  `json:"id"`
+	Seat uint16 `json:"seat"`
 }
 
 func insertPlayer(ctx context.Context, tx *sql.Tx) (int64, error) {

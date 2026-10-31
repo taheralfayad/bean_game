@@ -14,6 +14,10 @@ type fakeStore struct {
 	createdPlayer  *Player
 	createErr      error
 	createCalled   bool
+	joinedPlayer   *Player
+	joinErr        error
+	joinCalled     bool
+	joinGameId     uint64
 	playerCount    uint16
 	countErr       error
 	countCalled    bool
@@ -29,6 +33,15 @@ func (f *fakeStore) CreateGame(ctx context.Context) (*Game, *Player, error) {
 		return nil, nil, f.createErr
 	}
 	return f.createdGame, f.createdPlayer, nil
+}
+
+func (f *fakeStore) JoinGame(ctx context.Context, gameId uint64) (*Player, error) {
+	f.joinCalled = true
+	f.joinGameId = gameId
+	if f.joinErr != nil {
+		return nil, f.joinErr
+	}
+	return f.joinedPlayer, nil
 }
 
 func (f *fakeStore) CountPlayers(ctx context.Context, gameId uint64) (uint16, error) {
@@ -96,6 +109,67 @@ func TestCreateGameError(t *testing.T) {
 	_, _, err := service.CreateGame(context.Background())
 	if !errors.Is(err, want) {
 		t.Fatalf("error = %v, want %v", err, want)
+	}
+}
+
+func TestJoinGame(t *testing.T) {
+	wantPlayer := &Player{Id: 8, Seat: 2}
+	store := &fakeStore{joinedPlayer: wantPlayer}
+	publisher := &fakePublisher{}
+	service := NewService(store, &fakeVariants{}, publisher)
+
+	player, err := service.JoinGame(context.Background(), 12)
+	if err != nil {
+		t.Fatalf("JoinGame() error = %v", err)
+	}
+	if !store.joinCalled {
+		t.Fatal("JoinGame was not called")
+	}
+	if store.joinGameId != 12 {
+		t.Errorf("joined game id = %d, want 12", store.joinGameId)
+	}
+	if player != wantPlayer {
+		t.Errorf("player = %v, want %v", player, wantPlayer)
+	}
+	if len(publisher.events) != 1 {
+		t.Fatalf("published events = %d, want 1", len(publisher.events))
+	}
+	if publisher.events[0].Topic != "game:12" {
+		t.Errorf("event topic = %q, want %q", publisher.events[0].Topic, "game:12")
+	}
+	if publisher.events[0].Type != "game.player_joined" {
+		t.Errorf("event type = %q, want %q", publisher.events[0].Type, "game.player_joined")
+	}
+	if publisher.events[0].Payload != wantPlayer {
+		t.Errorf("event payload = %v, want %v", publisher.events[0].Payload, wantPlayer)
+	}
+}
+
+func TestJoinGameNotFound(t *testing.T) {
+	store := &fakeStore{joinErr: ErrGameNotFound}
+	publisher := &fakePublisher{}
+	service := NewService(store, &fakeVariants{}, publisher)
+
+	_, err := service.JoinGame(context.Background(), 12)
+	if !errors.Is(err, ErrGameNotFound) {
+		t.Fatalf("error = %v, want %v", err, ErrGameNotFound)
+	}
+	if len(publisher.events) != 0 {
+		t.Fatalf("published events = %d, want 0", len(publisher.events))
+	}
+}
+
+func TestJoinGameAlreadyStarted(t *testing.T) {
+	store := &fakeStore{joinErr: ErrGameStarted}
+	publisher := &fakePublisher{}
+	service := NewService(store, &fakeVariants{}, publisher)
+
+	_, err := service.JoinGame(context.Background(), 12)
+	if !errors.Is(err, ErrGameStarted) {
+		t.Fatalf("error = %v, want %v", err, ErrGameStarted)
+	}
+	if len(publisher.events) != 0 {
+		t.Fatalf("published events = %d, want 0", len(publisher.events))
 	}
 }
 
