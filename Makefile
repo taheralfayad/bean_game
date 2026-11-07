@@ -1,3 +1,6 @@
+start:
+	docker compose up
+
 migrate:
 	docker compose run migrate up
 
