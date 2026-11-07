@@ -22,6 +22,10 @@ type fakeStore struct {
 	countErr       error
 	countCalled    bool
 	counts         []uint16
+	players        []Player
+	listErr        error
+	listCalled     bool
+	listGameId     uint64
 	startCalled    bool
 	startCalls     int
 	startedGameId  uint64
@@ -56,6 +60,12 @@ func (f *fakeStore) CountPlayers(ctx context.Context, gameId uint64) (uint16, er
 		return count, f.countErr
 	}
 	return f.playerCount, f.countErr
+}
+
+func (f *fakeStore) ListPlayers(ctx context.Context, gameId uint64) ([]Player, error) {
+	f.listCalled = true
+	f.listGameId = gameId
+	return f.players, f.listErr
 }
 
 func (f *fakeStore) StartGame(ctx context.Context, gameId uint64, variantId uint16, expectedPlayerCount uint16) (*Game, error) {
@@ -188,6 +198,37 @@ func TestJoinGameAlreadyStarted(t *testing.T) {
 	}
 	if len(publisher.events) != 0 {
 		t.Fatalf("published events = %d, want 0", len(publisher.events))
+	}
+}
+
+func TestListPlayers(t *testing.T) {
+	want := []Player{{Id: 8, Seat: 1}, {Id: 9, Seat: 2}}
+	store := &fakeStore{players: want}
+	service := NewService(store, &fakeVariants{}, &fakePublisher{})
+
+	got, err := service.ListPlayers(context.Background(), 12)
+	if err != nil {
+		t.Fatalf("ListPlayers() error = %v", err)
+	}
+	if !store.listCalled {
+		t.Fatal("ListPlayers was not called")
+	}
+	if store.listGameId != 12 {
+		t.Errorf("listed game id = %d, want 12", store.listGameId)
+	}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("ListPlayers() = %v, want %v", got, want)
+	}
+}
+
+func TestListPlayersError(t *testing.T) {
+	want := errors.New("db down")
+	store := &fakeStore{listErr: want}
+	service := NewService(store, &fakeVariants{}, &fakePublisher{})
+
+	_, err := service.ListPlayers(context.Background(), 12)
+	if !errors.Is(err, want) {
+		t.Fatalf("ListPlayers() error = %v, want %v", err, want)
 	}
 }
 

@@ -15,6 +15,7 @@ type gameStore interface {
 	CreateGame(ctx context.Context) (*Game, *Player, error)
 	JoinGame(ctx context.Context, gameId uint64) (*Player, error)
 	CountPlayers(ctx context.Context, gameId uint64) (uint16, error)
+	ListPlayers(ctx context.Context, gameId uint64) ([]Player, error)
 	StartGame(ctx context.Context, gameId uint64, variantId uint16, expectedPlayerCount uint16) (*Game, error)
 }
 
@@ -53,6 +54,10 @@ func (s *Service) JoinGame(ctx context.Context, gameId uint64) (*Player, error) 
 	})
 
 	return player, nil
+}
+
+func (s *Service) ListPlayers(ctx context.Context, gameId uint64) ([]Player, error) {
+	return s.store.ListPlayers(ctx, gameId)
 }
 
 func (s *Service) StartGame(ctx context.Context, gameId uint64) (*Game, error) {

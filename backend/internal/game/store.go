@@ -121,6 +121,33 @@ func (s *Store) CountPlayers(ctx context.Context, gameId uint64) (uint16, error)
 	return count, nil
 }
 
+func (s *Store) ListPlayers(ctx context.Context, gameId uint64) ([]Player, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT player_id, seat
+		FROM games_players
+		WHERE game_id = $1
+		ORDER BY seat
+	`, gameId)
+	if err != nil {
+		return nil, fmt.Errorf("list game players: %w", err)
+	}
+	defer rows.Close()
+
+	var players []Player
+	for rows.Next() {
+		var player Player
+		if err := rows.Scan(&player.Id, &player.Seat); err != nil {
+			return nil, fmt.Errorf("scan game player: %w", err)
+		}
+		players = append(players, player)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate game players: %w", err)
+	}
+
+	return players, nil
+}
+
 func (s *Store) StartGame(ctx context.Context, gameId uint64, variantId uint16, expectedPlayerCount uint16) (*Game, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
