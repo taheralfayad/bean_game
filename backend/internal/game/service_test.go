@@ -21,9 +21,13 @@ type fakeStore struct {
 	playerCount    uint16
 	countErr       error
 	countCalled    bool
+	counts         []uint16
 	startCalled    bool
+	startCalls     int
 	startedGameId  uint64
 	startedVariant uint16
+	startedCount   uint16
+	startErrs      []error
 	startErr       error
 }
 
@@ -46,13 +50,27 @@ func (f *fakeStore) JoinGame(ctx context.Context, gameId uint64) (*Player, error
 
 func (f *fakeStore) CountPlayers(ctx context.Context, gameId uint64) (uint16, error) {
 	f.countCalled = true
+	if len(f.counts) > 0 {
+		count := f.counts[0]
+		f.counts = f.counts[1:]
+		return count, f.countErr
+	}
 	return f.playerCount, f.countErr
 }
 
-func (f *fakeStore) StartGame(ctx context.Context, gameId uint64, variantId uint16) (*Game, error) {
+func (f *fakeStore) StartGame(ctx context.Context, gameId uint64, variantId uint16, expectedPlayerCount uint16) (*Game, error) {
 	f.startCalled = true
+	f.startCalls++
 	f.startedGameId = gameId
 	f.startedVariant = variantId
+	f.startedCount = expectedPlayerCount
+	if len(f.startErrs) > 0 {
+		err := f.startErrs[0]
+		f.startErrs = f.startErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
 	if f.startErr != nil {
 		return nil, f.startErr
 	}
@@ -60,16 +78,16 @@ func (f *fakeStore) StartGame(ctx context.Context, gameId uint64, variantId uint
 }
 
 type fakeVariants struct {
-	id          uint16
+	variant     *gamevariant.GameVariant
 	err         error
 	playerCount uint16
 	called      bool
 }
 
-func (f *fakeVariants) FindByPlayerCount(ctx context.Context, playerCount uint16) (uint16, error) {
+func (f *fakeVariants) FindByPlayerCount(ctx context.Context, playerCount uint16) (*gamevariant.GameVariant, error) {
 	f.called = true
 	f.playerCount = playerCount
-	return f.id, f.err
+	return f.variant, f.err
 }
 
 type fakePublisher struct {
@@ -175,7 +193,7 @@ func TestJoinGameAlreadyStarted(t *testing.T) {
 
 func TestStartGame(t *testing.T) {
 	store := &fakeStore{playerCount: 4}
-	variants := &fakeVariants{id: 9}
+	variants := &fakeVariants{variant: &gamevariant.GameVariant{Id: 9}}
 	publisher := &fakePublisher{}
 	service := NewService(store, variants, publisher)
 
@@ -212,7 +230,7 @@ func TestStartGame(t *testing.T) {
 
 func TestStartGameNoPlayers(t *testing.T) {
 	store := &fakeStore{playerCount: 0}
-	variants := &fakeVariants{id: 9}
+	variants := &fakeVariants{variant: &gamevariant.GameVariant{Id: 9}}
 	service := NewService(store, variants, &fakePublisher{})
 
 	_, err := service.StartGame(context.Background(), 12)
@@ -230,7 +248,7 @@ func TestStartGameNoPlayers(t *testing.T) {
 func TestStartGameCountError(t *testing.T) {
 	want := errors.New("db down")
 	store := &fakeStore{countErr: want}
-	variants := &fakeVariants{id: 9}
+	variants := &fakeVariants{variant: &gamevariant.GameVariant{Id: 9}}
 	service := NewService(store, variants, &fakePublisher{})
 
 	_, err := service.StartGame(context.Background(), 12)
@@ -256,10 +274,51 @@ func TestStartGameVariantNotFound(t *testing.T) {
 	}
 }
 
+func TestStartGameRetriesOnPlayerCountChange(t *testing.T) {
+	store := &fakeStore{counts: []uint16{4, 5}, startErrs: []error{ErrPlayersChanged}}
+	variants := &fakeVariants{variant: &gamevariant.GameVariant{Id: 9}}
+	publisher := &fakePublisher{}
+	service := NewService(store, variants, publisher)
+
+	game, err := service.StartGame(context.Background(), 12)
+	if err != nil {
+		t.Fatalf("StartGame() error = %v", err)
+	}
+	if store.startCalls != 2 {
+		t.Fatalf("StartGame calls = %d, want 2", store.startCalls)
+	}
+	if store.startedCount != 5 {
+		t.Errorf("started count = %d, want 5", store.startedCount)
+	}
+	if game.VariantId == nil || *game.VariantId != 9 {
+		t.Errorf("VariantId = %v, want 9", game.VariantId)
+	}
+	if len(publisher.events) != 1 {
+		t.Fatalf("published events = %d, want 1", len(publisher.events))
+	}
+}
+
+func TestStartGameGivesUpAfterPlayerCountChanges(t *testing.T) {
+	store := &fakeStore{playerCount: 4, startErrs: []error{ErrPlayersChanged, ErrPlayersChanged, ErrPlayersChanged}}
+	publisher := &fakePublisher{}
+	service := NewService(store, &fakeVariants{variant: &gamevariant.GameVariant{Id: 9}}, publisher)
+
+	_, err := service.StartGame(context.Background(), 12)
+	if !errors.Is(err, ErrPlayersChanged) {
+		t.Fatalf("error = %v, want %v", err, ErrPlayersChanged)
+	}
+	if store.startCalls != startGameAttempts {
+		t.Errorf("StartGame calls = %d, want %d", store.startCalls, startGameAttempts)
+	}
+	if len(publisher.events) != 0 {
+		t.Fatalf("published events = %d, want 0", len(publisher.events))
+	}
+}
+
 func TestStartGameStoreError(t *testing.T) {
 	want := ErrGameStarted
 	store := &fakeStore{playerCount: 4, startErr: want}
-	variants := &fakeVariants{id: 9}
+	variants := &fakeVariants{variant: &gamevariant.GameVariant{Id: 9}}
 	service := NewService(store, variants, &fakePublisher{})
 
 	_, err := service.StartGame(context.Background(), 12)

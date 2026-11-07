@@ -2,20 +2,24 @@ package game
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/taheralfayad/bean_game/backend/internal/gameevents"
+	"github.com/taheralfayad/bean_game/backend/internal/gamevariant"
 )
+
+const startGameAttempts = 3
 
 type gameStore interface {
 	CreateGame(ctx context.Context) (*Game, *Player, error)
 	JoinGame(ctx context.Context, gameId uint64) (*Player, error)
 	CountPlayers(ctx context.Context, gameId uint64) (uint16, error)
-	StartGame(ctx context.Context, gameId uint64, variantId uint16) (*Game, error)
+	StartGame(ctx context.Context, gameId uint64, variantId uint16, expectedPlayerCount uint16) (*Game, error)
 }
 
 type variantFinder interface {
-	FindByPlayerCount(ctx context.Context, playerCount uint16) (uint16, error)
+	FindByPlayerCount(ctx context.Context, playerCount uint16) (*gamevariant.GameVariant, error)
 }
 
 type eventPublisher interface {
@@ -52,22 +56,39 @@ func (s *Service) JoinGame(ctx context.Context, gameId uint64) (*Player, error) 
 }
 
 func (s *Service) StartGame(ctx context.Context, gameId uint64) (*Game, error) {
-	playerCount, err := s.store.CountPlayers(ctx, gameId)
-	if err != nil {
-		return nil, err
-	}
-	if playerCount == 0 {
-		return nil, ErrGameNotFound
-	}
+	// documenting a decision i had to make. in order to find the variant
+	// we have to call the method that the variants repository exposes for us
+	// otherwise, we would be breaking module boundaries. however, this could
+	// potentially introduce a time-of-check to time-of-use (TOCTOU race condition).
+	// to solve this without checking for game variant id in the game repository method,
+	// we basically retry starting the game if the player count has changed.
 
-	variantId, err := s.variants.FindByPlayerCount(ctx, playerCount)
-	if err != nil {
-		return nil, err
-	}
+	var game *Game
 
-	game, err := s.store.StartGame(ctx, gameId, variantId)
-	if err != nil {
-		return nil, err
+	for attempt := 0; ; attempt++ {
+
+		playerCount, err := s.store.CountPlayers(ctx, gameId)
+		if err != nil {
+			return nil, err
+		}
+		if playerCount == 0 {
+			return nil, ErrGameNotFound
+		}
+
+		variant, err := s.variants.FindByPlayerCount(ctx, playerCount)
+		if err != nil {
+			return nil, err
+		}
+
+		game, err = s.store.StartGame(ctx, gameId, variant.Id, playerCount)
+		if errors.Is(err, ErrPlayersChanged) && attempt+1 < startGameAttempts {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		break
 	}
 
 	s.publisher.Publish(gameevents.Event{

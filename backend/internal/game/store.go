@@ -8,8 +8,9 @@ import (
 )
 
 var (
-	ErrGameNotFound = errors.New("game not found")
-	ErrGameStarted  = errors.New("game already started")
+	ErrGameNotFound   = errors.New("game not found")
+	ErrGameStarted    = errors.New("game already started")
+	ErrPlayersChanged = errors.New("player count changed")
 )
 
 type Store struct{ db *sql.DB }
@@ -120,7 +121,7 @@ func (s *Store) CountPlayers(ctx context.Context, gameId uint64) (uint16, error)
 	return count, nil
 }
 
-func (s *Store) StartGame(ctx context.Context, gameId uint64, variantId uint16) (*Game, error) {
+func (s *Store) StartGame(ctx context.Context, gameId uint64, variantId uint16, expectedPlayerCount uint16) (*Game, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
@@ -141,6 +142,18 @@ func (s *Store) StartGame(ctx context.Context, gameId uint64, variantId uint16) 
 	}
 	if existingVariantId != nil {
 		return nil, ErrGameStarted
+	}
+
+	var playerCount uint16
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM games_players
+		WHERE game_id = $1
+	`, gameId).Scan(&playerCount); err != nil {
+		return nil, fmt.Errorf("count game players: %w", err)
+	}
+	if playerCount != expectedPlayerCount {
+		return nil, ErrPlayersChanged
 	}
 
 	var game Game
