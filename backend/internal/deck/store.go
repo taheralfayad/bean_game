@@ -3,6 +3,7 @@ package deck
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -40,6 +41,45 @@ func (s *Store) InsertDeck(ctx context.Context, slug string, beans []DeckBean) (
 	}
 
 	return &Deck{Id: id, Slug: slug, Beans: beans}, nil
+}
+
+func (s *Store) FindByID(ctx context.Context, id uint16) (*Deck, error) {
+	var deck Deck
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, slug
+		FROM decks
+		WHERE id = $1
+	`, id).Scan(&deck.Id, &deck.Slug)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find deck: %w", err)
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT bean_id, card_count
+		FROM beans_decks
+		WHERE deck_id = $1
+		ORDER BY bean_id
+	`, id)
+	if err != nil {
+		return nil, fmt.Errorf("find deck beans: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var bean DeckBean
+		if err := rows.Scan(&bean.BeanId, &bean.CardCount); err != nil {
+			return nil, fmt.Errorf("scan deck bean: %w", err)
+		}
+		deck.Beans = append(deck.Beans, bean)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate deck beans: %w", err)
+	}
+
+	return &deck, nil
 }
 
 func (s *Store) DeleteDeck(ctx context.Context, id uint16) error {

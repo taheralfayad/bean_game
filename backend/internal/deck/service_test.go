@@ -8,6 +8,10 @@ import (
 )
 
 type fakeStore struct {
+	findID       uint16
+	findCalled   bool
+	found        *Deck
+	findErr      error
 	insertSlug   string
 	insertBeans  []DeckBean
 	insertCalled bool
@@ -15,6 +19,12 @@ type fakeStore struct {
 	deleteCalled bool
 	deleteErr    error
 	insertErr    error
+}
+
+func (f *fakeStore) FindByID(ctx context.Context, id uint16) (*Deck, error) {
+	f.findCalled = true
+	f.findID = id
+	return f.found, f.findErr
 }
 
 func (f *fakeStore) InsertDeck(ctx context.Context, slug string, beans []DeckBean) (*Deck, error) {
@@ -143,6 +153,35 @@ func TestCreateDeckStoreError(t *testing.T) {
 	_, err := service.Create(context.Background(), "base_3_5", []DeckBean{{BeanId: 1, CardCount: 8}})
 	if !errors.Is(err, storeErr) {
 		t.Fatalf("Create() error = %v, want %v", err, storeErr)
+	}
+}
+
+func TestFindDeckByID(t *testing.T) {
+	want := &Deck{Id: 3, Slug: "base_3_5", Beans: []DeckBean{{BeanId: 1, CardCount: 8}}}
+	store := &fakeStore{found: want}
+	service := NewService(store)
+
+	got, err := service.FindByID(context.Background(), 3)
+	if err != nil {
+		t.Fatalf("FindByID() error = %v", err)
+	}
+	if !store.findCalled {
+		t.Fatal("FindByID was not called")
+	}
+	if store.findID != 3 {
+		t.Errorf("looked up id = %d, want 3", store.findID)
+	}
+	if got != want {
+		t.Errorf("deck = %v, want %v", got, want)
+	}
+}
+
+func TestFindDeckByIDNotFound(t *testing.T) {
+	service := NewService(&fakeStore{findErr: ErrNotFound})
+
+	_, err := service.FindByID(context.Background(), 42)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("FindByID() error = %v, want %v", err, ErrNotFound)
 	}
 }
 

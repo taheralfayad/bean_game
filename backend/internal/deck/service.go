@@ -19,6 +19,7 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
 const maxSlugLength = 40
 
 type deckStore interface {
+	FindByID(ctx context.Context, id uint16) (*Deck, error)
 	InsertDeck(ctx context.Context, slug string, beans []DeckBean) (*Deck, error)
 	DeleteDeck(ctx context.Context, id uint16) error
 }
@@ -29,6 +30,10 @@ type Service struct {
 
 func NewService(store deckStore) *Service {
 	return &Service{store: store}
+}
+
+func (s *Service) FindByID(ctx context.Context, id uint16) (*Deck, error) {
+	return s.store.FindByID(ctx, id)
 }
 
 func (s *Service) Create(ctx context.Context, slug string, beans []DeckBean) (*Deck, error) {
