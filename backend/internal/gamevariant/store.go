@@ -47,21 +47,29 @@ func (s *Store) ListVariants(ctx context.Context) ([]GameVariant, error) {
 	return variants, nil
 }
 
-func (s *Store) FindByPlayerCount(ctx context.Context, playerCount uint16) (uint16, error) {
-	var id uint16
+func (s *Store) FindByPlayerCount(ctx context.Context, playerCount uint16) (*GameVariant, error) {
+	var variant GameVariant
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id
+		SELECT id, slug, name, min_players, max_players, deck_id, end_of_turn_draw_count
 		FROM game_variants
 		WHERE $1 BETWEEN min_players AND max_players
-	`, playerCount).Scan(&id)
+	`, playerCount).Scan(
+		&variant.Id,
+		&variant.Slug,
+		&variant.Name,
+		&variant.MinPlayers,
+		&variant.MaxPlayers,
+		&variant.DeckId,
+		&variant.EndOfTurnDrawCount,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, ErrNoMatch
+		return nil, ErrNoMatch
 	}
 	if err != nil {
-		return 0, fmt.Errorf("find game variant: %w", err)
+		return nil, fmt.Errorf("find game variant: %w", err)
 	}
 
-	return id, nil
+	return &variant, nil
 }
 
 func (s *Store) InsertVariant(ctx context.Context, variant GameVariant) (*GameVariant, error) {

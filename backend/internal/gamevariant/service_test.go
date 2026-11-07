@@ -24,8 +24,8 @@ func (f *fakeStore) ListVariants(ctx context.Context) ([]GameVariant, error) {
 	return f.variants, f.listErr
 }
 
-func (f *fakeStore) FindByPlayerCount(ctx context.Context, playerCount uint16) (uint16, error) {
-	return 0, nil
+func (f *fakeStore) FindByPlayerCount(ctx context.Context, playerCount uint16) (*GameVariant, error) {
+	return nil, nil
 }
 
 func (f *fakeStore) InsertVariant(ctx context.Context, variant GameVariant) (*GameVariant, error) {

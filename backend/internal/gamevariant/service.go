@@ -26,7 +26,7 @@ const (
 
 type gamevariantStore interface {
 	ListVariants(ctx context.Context) ([]GameVariant, error)
-	FindByPlayerCount(ctx context.Context, playerCount uint16) (uint16, error)
+	FindByPlayerCount(ctx context.Context, playerCount uint16) (*GameVariant, error)
 	InsertVariant(ctx context.Context, variant GameVariant) (*GameVariant, error)
 	DeleteVariant(ctx context.Context, id uint16) error
 }
@@ -43,7 +43,7 @@ func (s *Service) List(ctx context.Context) ([]GameVariant, error) {
 	return s.store.ListVariants(ctx)
 }
 
-func (s *Service) FindByPlayerCount(ctx context.Context, playerCount uint16) (uint16, error) {
+func (s *Service) FindByPlayerCount(ctx context.Context, playerCount uint16) (*GameVariant, error) {
 	return s.store.FindByPlayerCount(ctx, playerCount)
 }
 
