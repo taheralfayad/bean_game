@@ -1,0 +1,1 @@
+DROP TABLE game_variant_starting_hands;

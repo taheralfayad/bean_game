@@ -29,6 +29,7 @@ type gamevariantStore interface {
 	FindByPlayerCount(ctx context.Context, playerCount uint16) (*GameVariant, error)
 	InsertVariant(ctx context.Context, variant GameVariant) (*GameVariant, error)
 	DeleteVariant(ctx context.Context, id uint16) error
+	FindStartingHandBySeat(ctx context.Context, variantId, seat uint16) (uint16, error)
 }
 
 type Service struct {
@@ -37,6 +38,10 @@ type Service struct {
 
 func NewService(store gamevariantStore) *Service {
 	return &Service{store: store}
+}
+
+func (s *Service) FindStartingHandBySeat(ctx context.Context, variantId, seat uint16) (uint16, error) {
+	return s.store.FindStartingHandBySeat(ctx, variantId, seat)
 }
 
 func (s *Service) List(ctx context.Context) ([]GameVariant, error) {

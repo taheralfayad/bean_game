@@ -41,9 +41,9 @@ func main() {
 		bean.NewService(bean.NewStore(database), blobStorage, cfg.Files.MaxUploadBytes),
 	)
 
-	deckHandler := deck.NewHandler(
-		deck.NewService(deck.NewStore(database)),
-	)
+	deckService := deck.NewService(deck.NewStore(database))
+
+	deckHandler := deck.NewHandler(deckService)
 
 	gameVariantService := gamevariant.NewService(gamevariant.NewStore(database))
 
@@ -52,7 +52,7 @@ func main() {
 	)
 
 	gameHandler := game.NewHandler(
-		game.NewService(game.NewStore(database), gameVariantService, gameEventsBroker),
+		game.NewService(game.NewStore(database), gameVariantService, deckService, gameEventsBroker),
 	)
 
 	gameeventsHandler := gameevents.NewHandler(

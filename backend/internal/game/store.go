@@ -8,104 +8,116 @@ import (
 )
 
 var (
-	ErrGameNotFound   = errors.New("game not found")
-	ErrGameStarted    = errors.New("game already started")
-	ErrPlayersChanged = errors.New("player count changed")
+	ErrGameNotFound    = errors.New("game not found")
+	ErrGameStarted     = errors.New("game already started")
+	ErrGameStarting    = errors.New("game already starting")
+	ErrGameNotStarting = errors.New("game not starting")
+	ErrPlayersChanged  = errors.New("player count changed")
 )
 
-type Store struct{ db *sql.DB }
+type DBTX interface {
+	ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row
+}
 
-func NewStore(db *sql.DB) *Store { return &Store{db: db} }
+type Store struct {
+	db *sql.DB
+	q  DBTX
+}
+
+func NewStore(db *sql.DB) *Store { return &Store{db: db, q: db} }
+
+func (s *Store) WithTx(ctx context.Context, fn func(tx *Store) error) (err error) {
+	sqlTx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			_ = sqlTx.Rollback()
+			panic(p)
+		}
+		if err != nil {
+			if rbErr := sqlTx.Rollback(); rbErr != nil {
+				err = errors.Join(err, rbErr)
+			}
+		}
+	}()
+
+	if err = fn(&Store{q: sqlTx}); err != nil {
+		return err
+	}
+	return sqlTx.Commit()
+}
 
 func (s *Store) CreateGame(ctx context.Context) (*Game, *Player, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback()
+	var (
+		game   *Game
+		player *Player
+	)
 
-	var game Game
-	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO games DEFAULT VALUES
-		RETURNING id, shuffle_number, current_seat, current_phase, variant_id
-	`).Scan(
-		&game.Id,
-		&game.ShuffleNumber,
-		&game.CurrentSeat,
-		&game.CurrentPhase,
-		&game.VariantId,
-	); err != nil {
-		return nil, nil, fmt.Errorf("insert game: %w", err)
-	}
+	err := s.WithTx(ctx, func(tx *Store) error {
+		var err error
 
-	playerId, err := insertPlayer(ctx, tx)
+		if game, err = tx.insertGame(ctx); err != nil {
+			return err
+		}
+
+		playerId, err := tx.insertPlayer(ctx)
+		if err != nil {
+			return err
+		}
+
+		const hostSeat = 1
+		if err := tx.insertGamePlayer(ctx, game.Id, playerId, hostSeat); err != nil {
+			return err
+		}
+
+		player = &Player{Id: playerId, Seat: hostSeat}
+		return nil
+	})
 	if err != nil {
 		return nil, nil, err
 	}
-
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO games_players (game_id, player_id, seat)
-		VALUES ($1, $2, $3)
-	`, game.Id, playerId, 1); err != nil {
-		return nil, nil, fmt.Errorf("insert game player: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, nil, fmt.Errorf("commit game: %w", err)
-	}
-
-	return &game, &Player{Id: playerId, Seat: 1}, nil
+	return game, player, nil
 }
 
 func (s *Store) JoinGame(ctx context.Context, gameId uint64) (*Player, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback()
+	var player *Player
 
-	var variantId *uint16
-	if err := tx.QueryRowContext(ctx, `
-		SELECT variant_id
-		FROM games
-		WHERE id = $1
-		FOR UPDATE
-	`, gameId).Scan(&variantId); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrGameNotFound
+	err := s.WithTx(ctx, func(tx *Store) error {
+		state, err := tx.lockGameState(ctx, gameId)
+		if err != nil {
+			return err
 		}
-		return nil, fmt.Errorf("lock game: %w", err)
-	}
-	if variantId != nil {
-		return nil, ErrGameStarted
-	}
+		if state != StateLobby {
+			return ErrGameStarted
+		}
 
-	var seat uint16
-	if err := tx.QueryRowContext(ctx, `
-		SELECT COALESCE(MAX(seat), 0) + 1
-		FROM games_players
-		WHERE game_id = $1
-	`, gameId).Scan(&seat); err != nil {
-		return nil, fmt.Errorf("next seat: %w", err)
-	}
+		seat, err := tx.nextSeat(ctx, gameId)
+		if err != nil {
+			return err
+		}
 
-	playerId, err := insertPlayer(ctx, tx)
+		playerId, err := tx.insertPlayer(ctx)
+		if err != nil {
+			return err
+		}
+
+		if err := tx.insertGamePlayer(ctx, gameId, playerId, seat); err != nil {
+			return err
+		}
+
+		player = &Player{Id: playerId, Seat: seat}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO games_players (game_id, player_id, seat)
-		VALUES ($1, $2, $3)
-	`, gameId, playerId, seat); err != nil {
-		return nil, fmt.Errorf("insert game player: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit game: %w", err)
-	}
-
-	return &Player{Id: playerId, Seat: seat}, nil
+	return player, nil
 }
 
 func (s *Store) CountPlayers(ctx context.Context, gameId uint64) (uint16, error) {
@@ -148,60 +160,230 @@ func (s *Store) ListPlayers(ctx context.Context, gameId uint64) ([]Player, error
 	return players, nil
 }
 
-func (s *Store) StartGame(ctx context.Context, gameId uint64, variantId uint16, expectedPlayerCount uint16) (*Game, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	var existingVariantId *uint16
-	if err := tx.QueryRowContext(ctx, `
-		SELECT variant_id
-		FROM games
-		WHERE id = $1
-		FOR UPDATE
-	`, gameId).Scan(&existingVariantId); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrGameNotFound
-		}
-		return nil, fmt.Errorf("lock game: %w", err)
-	}
-	if existingVariantId != nil {
-		return nil, ErrGameStarted
-	}
-
-	var playerCount uint16
-	if err := tx.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM games_players
-		WHERE game_id = $1
-	`, gameId).Scan(&playerCount); err != nil {
-		return nil, fmt.Errorf("count game players: %w", err)
-	}
-	if playerCount != expectedPlayerCount {
-		return nil, ErrPlayersChanged
-	}
-
+func (s *Store) StartGame(ctx context.Context, gameId uint64, variantId uint16, playerCount uint16) (*Game, error) {
 	var game Game
-	if err := tx.QueryRowContext(ctx, `
+	if err := s.db.QueryRowContext(ctx, `
 		UPDATE games
-		SET variant_id = $2
+		SET variant_id = $2, state = 'started'
 		WHERE id = $1
-		RETURNING id, shuffle_number, current_seat, current_phase, variant_id
+		RETURNING id, shuffle_number, current_seat, current_phase, variant_id, state
 	`, gameId, variantId).Scan(
 		&game.Id,
 		&game.ShuffleNumber,
 		&game.CurrentSeat,
 		&game.CurrentPhase,
 		&game.VariantId,
+		&game.State,
 	); err != nil {
 		return nil, fmt.Errorf("start game: %w", err)
 	}
 
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit game: %w", err)
+	return &game, nil
+}
+
+func (s *Store) BeginGameStart(ctx context.Context, gameId uint64) error {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE games
+		SET state = 'starting'
+		WHERE id = $1 AND state = 'lobby'
+	`, gameId)
+	if err != nil {
+		return fmt.Errorf("begin game start: %w", err)
 	}
 
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("begin game start rows affected: %w", err)
+	}
+	if affected > 0 {
+		return nil
+	}
+
+	state, err := s.GameState(ctx, gameId)
+	if err != nil {
+		return err
+	}
+	if state == StateStarted {
+		return ErrGameStarted
+	}
+
+	return ErrGameStarting
+}
+
+func (s *Store) AbortGameStart(ctx context.Context, gameId uint64) error {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE games
+		SET state = 'lobby'
+		WHERE id = $1 AND state = 'starting'
+	`, gameId)
+	if err != nil {
+		return fmt.Errorf("abort game start: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("abort game start rows affected: %w", err)
+	}
+	if affected > 0 {
+		return nil
+	}
+
+	state, err := s.GameState(ctx, gameId)
+	if err != nil {
+		return err
+	}
+	if state == StateStarted {
+		return ErrGameStarted
+	}
+
+	return nil
+}
+
+func (s *Store) GameState(ctx context.Context, gameId uint64) (State, error) {
+	var state State
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT state
+		FROM games
+		WHERE id = $1
+	`, gameId).Scan(&state); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrGameNotFound
+		}
+		return "", fmt.Errorf("find game state: %w", err)
+	}
+
+	return state, nil
+}
+
+func (s *Store) InsertCardsAtGameStart(ctx context.Context, gameId uint64, playerCards map[uint64][]uint16, remainingDeck []uint16) error {
+	err := s.WithTx(ctx, func(tx *Store) error {
+		for playerId, cards := range playerCards {
+			for position, beanId := range cards {
+				err := s.insertPlayerCard(ctx, gameId, playerId, beanId, position)
+
+				if err != nil {
+					return fmt.Errorf("insert cards: %w", err)
+				}
+			}
+		}
+
+		for position, beanId := range remainingDeck {
+			err := s.insertRemainingDeck(ctx, gameId, beanId, position)
+
+			if err != nil {
+				return fmt.Errorf("insert cards: %w", err)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Store) insertPlayerCard(ctx context.Context, gameId, playerId uint64, beanId uint16, position int) error {
+	if _, err := s.q.ExecContext(ctx, `
+		INSERT INTO cards (
+			game_id,
+			bean_id,
+			location,
+			position,
+			player_id
+		)
+		VALUES ($1, $2, $3, $4, $5)
+	`, gameId, beanId, LocationHand, position, playerId); err != nil {
+		return fmt.Errorf("insert player card: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Store) insertRemainingDeck(ctx context.Context, gameId uint64, beanId uint16, position int) error {
+	if _, err := s.q.ExecContext(ctx, `
+		INSERT INTO cards (
+			game_id,
+			bean_id,
+			location,
+			position
+		)
+		VALUES ($1, $2, $3, $4)
+	`, gameId, beanId, LocationDraw, position); err != nil {
+		return fmt.Errorf("insert remaining deck: %w", err)
+	}
+
+	return nil
+
+}
+
+func (s *Store) insertGame(ctx context.Context) (*Game, error) {
+	var game Game
+	if err := s.q.QueryRowContext(ctx, `
+		INSERT INTO games DEFAULT VALUES
+		RETURNING id, shuffle_number, current_seat, current_phase, variant_id, state
+	`).Scan(
+		&game.Id,
+		&game.ShuffleNumber,
+		&game.CurrentSeat,
+		&game.CurrentPhase,
+		&game.VariantId,
+		&game.State,
+	); err != nil {
+		return nil, fmt.Errorf("insert game: %w", err)
+	}
 	return &game, nil
+}
+
+func (s *Store) insertGamePlayer(ctx context.Context, gameId, playerId uint64, seat uint16) error {
+	if _, err := s.q.ExecContext(ctx, `
+		INSERT INTO games_players (game_id, player_id, seat)
+		VALUES ($1, $2, $3)
+	`, gameId, playerId, seat); err != nil {
+		return fmt.Errorf("insert game player: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) insertPlayer(ctx context.Context) (uint64, error) {
+	var id uint64
+	err := s.q.QueryRowContext(ctx, `
+		INSERT INTO players DEFAULT VALUES
+		RETURNING id
+	`).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("insert player: %w", err)
+	}
+
+	return id, nil
+}
+
+func (s *Store) lockGameState(ctx context.Context, gameId uint64) (State, error) {
+	var state State
+	if err := s.q.QueryRowContext(ctx, `
+		SELECT state
+		FROM games
+		WHERE id = $1
+		FOR UPDATE
+	`, gameId).Scan(&state); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrGameNotFound
+		}
+		return "", fmt.Errorf("lock game: %w", err)
+	}
+	return state, nil
+}
+
+func (s *Store) nextSeat(ctx context.Context, gameId uint64) (uint16, error) {
+	var seat uint16
+	if err := s.q.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(seat), 0) + 1
+		FROM games_players
+		WHERE game_id = $1
+	`, gameId).Scan(&seat); err != nil {
+		return 0, fmt.Errorf("next seat: %w", err)
+	}
+	return seat, nil
 }

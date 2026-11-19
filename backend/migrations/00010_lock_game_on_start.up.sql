@@ -1,0 +1,2 @@
+ALTER TABLE games
+ADD locked BOOLEAN DEFAULT false NOT NULL;

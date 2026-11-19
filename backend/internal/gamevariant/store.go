@@ -115,3 +115,18 @@ func (s *Store) DeleteVariant(ctx context.Context, id uint16) error {
 
 	return nil
 }
+
+func (s *Store) FindStartingHandBySeat(ctx context.Context, variantId, seat uint16) (uint16, error) {
+	var cardCount uint16
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+			card_count
+		WHERE variant_id = $1 AND seat = $2
+	`, variantId, seat).Scan(&cardCount)
+
+	if err != nil {
+		return cardCount, err
+	}
+
+	return cardCount, nil
+}
