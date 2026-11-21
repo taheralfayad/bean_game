@@ -1,6 +1,12 @@
 start:
 	docker compose up
 
+check-frontend:
+	docker compose run --build --rm frontend npm run check
+
+build-frontend:
+	docker compose run --build --rm frontend npm run build
+
 migrate:
 	docker compose run migrate up
 

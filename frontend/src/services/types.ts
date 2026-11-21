@@ -1,0 +1,1 @@
+export type endpointMap = Record<string, string>
