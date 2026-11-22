@@ -2,15 +2,18 @@ package user
 
 import (
 	"errors"
+	"log"
 	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
 	ErrSecretKeyNotSet = errors.New("The secret key for generating the JWT is not set")
-	ErrInvalidKey      = errors.New("Failed to login, the username or password provided is incorrect")
+	ErrInvalidKey      = errors.New("The request is not authorized")
+	ErrInvalidPassword = errors.New("The username or password you entered is invalid")
 )
 
 var secretKey = os.Getenv("JWT_SECRET")
@@ -48,4 +51,25 @@ func verifyToken(tokenString string) error {
 	}
 
 	return nil
+}
+
+func hashAndSalt(pwd []byte) string {
+
+	hash, err := bcrypt.GenerateFromPassword(pwd, bcrypt.MinCost)
+	if err != nil {
+		log.Println(err)
+	}
+
+	return string(hash)
+}
+
+func comparePasswords(hashedPwd string, plainPwd []byte) (bool, error) {
+
+	byteHash := []byte(hashedPwd)
+	err := bcrypt.CompareHashAndPassword(byteHash, plainPwd)
+	if err != nil {
+		return false, ErrInvalidPassword
+	}
+
+	return true, nil
 }

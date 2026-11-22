@@ -1,6 +1,7 @@
 package user
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -53,5 +54,64 @@ func TestVerifyToken(t *testing.T) {
 	tamperedToken := tokenString[:len(tokenString)-1] + "x"
 	if err := verifyToken(tamperedToken); err == nil {
 		t.Fatal("expected tampered token verification to fail")
+	}
+}
+
+func TestHashAndSalt(t *testing.T) {
+	password := []byte("correct-horse-battery-staple")
+	hashedPassword := hashAndSalt(password)
+
+	if hashedPassword == "" {
+		t.Fatal("expected a password hash")
+	}
+	if hashedPassword == string(password) {
+		t.Fatal("expected the hash to differ from the password")
+	}
+
+	if matched, err := comparePasswords(hashedPassword, password); err != nil || !matched {
+		t.Fatalf("expected password to match, got matched=%v, err=%v", matched, err)
+	}
+}
+
+func TestComparePasswords(t *testing.T) {
+	hashedPassword := hashAndSalt([]byte("correct-password"))
+
+	tests := []struct {
+		name        string
+		hashed      string
+		password    []byte
+		wantMatched bool
+		wantErr     error
+	}{
+		{
+			name:        "matching password",
+			hashed:      hashedPassword,
+			password:    []byte("correct-password"),
+			wantMatched: true,
+		},
+		{
+			name:     "incorrect password",
+			hashed:   hashedPassword,
+			password: []byte("wrong-password"),
+			wantErr:  ErrInvalidPassword,
+		},
+		{
+			name:     "invalid hash",
+			hashed:   "not-a-bcrypt-hash",
+			password: []byte("correct-password"),
+			wantErr:  ErrInvalidPassword,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			matched, err := comparePasswords(test.hashed, test.password)
+			if matched != test.wantMatched {
+				t.Errorf("matched = %v, want %v", matched, test.wantMatched)
+			}
+			if !errors.Is(err, test.wantErr) {
+				t.Errorf("error = %v, want %v", err, test.wantErr)
+			}
+		})
 	}
 }
