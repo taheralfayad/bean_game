@@ -50,7 +50,7 @@ func (s *Store) GetUser(ctx context.Context, username string, password []byte) (
 
 }
 
-func (s *Store) InsertUser(ctx context.Context, username string, password []byte) (*User, error) {
+func (s *Store) InsertUser(ctx context.Context, username string, password []byte, role Role) (*User, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
@@ -61,10 +61,10 @@ func (s *Store) InsertUser(ctx context.Context, username string, password []byte
 	hashed_password := hashAndSalt([]byte(password))
 
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO users (username, password)
-		VALUES ($1, $2)
+		INSERT INTO users (username, password, role)
+		VALUES ($1, $2, $3)
 		RETURNING id
-	`, username, hashed_password).Scan(&newId)
+	`, username, hashed_password, role).Scan(&newId)
 	if err != nil {
 		return nil, fmt.Errorf("Insert User: %w", err)
 	}
