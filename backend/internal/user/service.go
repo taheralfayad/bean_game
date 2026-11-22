@@ -10,11 +10,12 @@ import (
 
 var (
 	ErrSecretKeyNotSet = errors.New("The secret key for generating the JWT is not set")
+	ErrInvalidKey      = errors.New("Failed to login, the username or password provided is incorrect")
 )
 
-func createToken(username string) (string, error) {
-	secretKey := os.Getenv("JWT_SECRET")
+var secretKey = os.Getenv("JWT_SECRET")
 
+func createToken(username string) (string, error) {
 	if secretKey == "" {
 		return "", ErrSecretKeyNotSet
 	}
@@ -31,4 +32,20 @@ func createToken(username string) (string, error) {
 	}
 
 	return tokenString, nil
+}
+
+func verifyToken(tokenString string) error {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(secretKey), nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	if !token.Valid {
+		return ErrInvalidKey
+	}
+
+	return nil
 }
