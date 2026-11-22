@@ -29,7 +29,7 @@ func (s *Store) InsertUser(ctx context.Context, username string, password []byte
 		return nil, fmt.Errorf("Insert User: %w", err)
 	}
 
-	jwt, err := createToken(username)
+	token, err := createToken(username)
 	if err != nil {
 		return nil, fmt.Errorf("Insert User: %w", err)
 	}
@@ -37,7 +37,7 @@ func (s *Store) InsertUser(ctx context.Context, username string, password []byte
 	return &User{
 		Id:       newId,
 		Username: username,
-		Token:    jwt,
+		Token:    token,
 		Role:     UserRole,
 	}, nil
 }
