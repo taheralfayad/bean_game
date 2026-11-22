@@ -58,7 +58,10 @@ func TestVerifyToken(t *testing.T) {
 
 func TestHashAndSalt(t *testing.T) {
 	password := []byte("correct-horse-battery-staple")
-	hashedPassword := hashAndSalt(password)
+	hashedPassword, err := hashAndSalt(password)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if hashedPassword == "" {
 		t.Fatal("expected a password hash")
@@ -68,12 +71,15 @@ func TestHashAndSalt(t *testing.T) {
 	}
 
 	if matched := comparePasswords(hashedPassword, password); !matched {
-		t.Fatalf("expected password to match, got matched=%v, err=%v", matched)
+		t.Fatalf("expected password to match, got matched=%v", matched)
 	}
 }
 
 func TestComparePasswords(t *testing.T) {
-	hashedPassword := hashAndSalt([]byte("correct-password"))
+	hashedPassword, err := hashAndSalt([]byte("correct-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	tests := []struct {
 		name        string

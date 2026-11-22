@@ -10,17 +10,11 @@ type Store struct{ db *sql.DB }
 
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
-func (s *Store) GetUser(ctx context.Context, username string, password []byte) (*User, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
+func (s *Store) GetUser(ctx context.Context, username string) (*User, string, error) {
 	var user User
-	var hashed_password []byte
+	var hashedPassword string
 
-	err = tx.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, `
 		SELECT id, username, password, role
 		FROM users
 		WHERE username = $1
@@ -28,56 +22,25 @@ func (s *Store) GetUser(ctx context.Context, username string, password []byte) (
 	`, username).Scan(
 		&user.Id,
 		&user.Username,
-		hashed_password,
+		&hashedPassword,
 		&user.Role,
 	)
-
-	if err != nil || !comparePasswords(string(hashed_password), password) {
-		return nil, fmt.Errorf("Invalid username or password")
-	}
-
-	token, err := createToken(username)
 	if err != nil {
-		return nil, fmt.Errorf("Fetch user: %w", err)
+		return nil, "", fmt.Errorf("fetch user: %w", err)
 	}
 
-	return &User{
-		Id:       user.Id,
-		Username: user.Username,
-		Token:    token,
-		Role:     user.Role,
-	}, nil
-
+	return &user, hashedPassword, nil
 }
 
-func (s *Store) InsertUser(ctx context.Context, username string, password []byte, role Role) (*User, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	var newId uint16
-	hashed_password := hashAndSalt([]byte(password))
-
-	err = tx.QueryRowContext(ctx, `
+func (s *Store) InsertUser(ctx context.Context, username, hashedPassword string, role Role) (*User, error) {
+	var user User
+	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO users (username, password, role)
 		VALUES ($1, $2, $3)
-		RETURNING id
-	`, username, hashed_password, role).Scan(&newId)
+		RETURNING id, username, role
+	`, username, hashedPassword, role).Scan(&user.Id, &user.Username, &user.Role)
 	if err != nil {
-		return nil, fmt.Errorf("Insert User: %w", err)
+		return nil, fmt.Errorf("insert user: %w", err)
 	}
-
-	token, err := createToken(username)
-	if err != nil {
-		return nil, fmt.Errorf("Insert User: %w", err)
-	}
-
-	return &User{
-		Id:       newId,
-		Username: username,
-		Token:    token,
-		Role:     UserRole,
-	}, nil
+	return &user, nil
 }
