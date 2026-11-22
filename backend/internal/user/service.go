@@ -63,13 +63,13 @@ func hashAndSalt(pwd []byte) string {
 	return string(hash)
 }
 
-func comparePasswords(hashedPwd string, plainPwd []byte) (bool, error) {
+func comparePasswords(hashedPwd string, plainPwd []byte) bool {
 
 	byteHash := []byte(hashedPwd)
 	err := bcrypt.CompareHashAndPassword(byteHash, plainPwd)
 	if err != nil {
-		return false, ErrInvalidPassword
+		return false
 	}
 
-	return true, nil
+	return true
 }

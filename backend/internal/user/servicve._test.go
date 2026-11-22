@@ -1,7 +1,6 @@
 package user
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -68,8 +67,8 @@ func TestHashAndSalt(t *testing.T) {
 		t.Fatal("expected the hash to differ from the password")
 	}
 
-	if matched, err := comparePasswords(hashedPassword, password); err != nil || !matched {
-		t.Fatalf("expected password to match, got matched=%v, err=%v", matched, err)
+	if matched := comparePasswords(hashedPassword, password); !matched {
+		t.Fatalf("expected password to match, got matched=%v, err=%v", matched)
 	}
 }
 
@@ -105,12 +104,9 @@ func TestComparePasswords(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			matched, err := comparePasswords(test.hashed, test.password)
+			matched := comparePasswords(test.hashed, test.password)
 			if matched != test.wantMatched {
 				t.Errorf("matched = %v, want %v", matched, test.wantMatched)
-			}
-			if !errors.Is(err, test.wantErr) {
-				t.Errorf("error = %v, want %v", err, test.wantErr)
 			}
 		})
 	}
