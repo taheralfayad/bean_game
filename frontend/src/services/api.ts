@@ -33,6 +33,23 @@ class Api {
         return response.json() as Promise<User>
     }
 
+    public async login(username: string, password: string): Promise<User> {
+        const url: string = this.baseUrl + this.endpoints.login
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                username: username,
+                password: password
+            })
+        })
 
+        if (!response.ok) {
+            throw new Error(`Registration failed: ${response.status}`)
+        }
 
+        return response.json() as Promise<User>
+    }
 }
