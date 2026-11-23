@@ -1,4 +1,4 @@
-import type { endpointMap } from "./types";
+import type { endpointMap, User } from "./types";
 
 class Api {
     private baseUrl: string;
@@ -6,6 +6,33 @@ class Api {
 
     constructor(){
         this.baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
-        this.endpoints = {}
+        this.endpoints = {
+            register: "/register",
+            login: "/login"
+        }
     }
+
+
+    public async register(username: string, password: string): Promise<User> {
+        const url: string = this.baseUrl + this.endpoints.register
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                username: username,
+                password: password
+            })
+        })
+
+        if (!response.ok) {
+            throw new Error(`Registration failed: ${response.status}`)
+        }
+
+        return response.json() as Promise<User>
+    }
+
+
+
 }
