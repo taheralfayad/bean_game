@@ -1,1 +1,11 @@
+@import url('https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Cabin:ital,wght@0,400..700;1,400..700&display=swap');
 @import 'tailwindcss';
+
+
+@theme{
+    --color-primary: #fef200;
+    --color-secondary: #ed1b24;
+    --font-bonanza: "Abril Fatface", "serif";
+}
+
+
