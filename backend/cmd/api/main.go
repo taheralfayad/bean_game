@@ -63,9 +63,10 @@ func main() {
 	userHandler := user.NewHandler(user.NewService(user.NewStore(database)))
 
 	r := gin.Default()
-	beanHandler.Register(r)
-	deckHandler.Register(r)
-	gamevariantHandler.Register(r)
+	adminRoutes := r.Group("", user.AdminOnly())
+	beanHandler.Register(adminRoutes)
+	deckHandler.Register(adminRoutes)
+	gamevariantHandler.Register(adminRoutes)
 	gameHandler.Register(r)
 	gameeventsHandler.Register(r)
 	userHandler.Register(r)

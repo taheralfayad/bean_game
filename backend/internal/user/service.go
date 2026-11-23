@@ -37,7 +37,7 @@ func (s *Service) Get(ctx context.Context, username string, password []byte) (*U
 		return nil, ErrInvalidPassword
 	}
 
-	token, err := createToken(username)
+	token, err := createToken(username, user.Role)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (s *Service) Create(ctx context.Context, username string, password []byte, 
 	if err != nil {
 		return nil, err
 	}
-	token, err := createToken(username)
+	token, err := createToken(username, role)
 	if err != nil {
 		return nil, err
 	}
@@ -63,16 +63,19 @@ func (s *Service) Create(ctx context.Context, username string, password []byte, 
 	return user, nil
 }
 
-func createToken(username string) (string, error) {
+func createToken(username string, role Role) (string, error) {
 	if secretKey == "" {
 		return "", ErrSecretKeyNotSet
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256,
-		jwt.MapClaims{
-			"username": username,
-			"exp":      time.Now().Add(24 * time.Hour).Unix(),
-		})
+	claims := tokenClaims{
+		Username: username,
+		Role:     role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	tokenString, err := token.SignedString([]byte(secretKey))
 	if err != nil {
@@ -83,19 +86,32 @@ func createToken(username string) (string, error) {
 }
 
 func verifyToken(tokenString string) error {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	_, err := parseToken(tokenString)
+	return err
+}
+
+type tokenClaims struct {
+	Username string `json:"username"`
+	Role     Role   `json:"role"`
+	jwt.RegisteredClaims
+}
+
+func parseToken(tokenString string) (*tokenClaims, error) {
+	if secretKey == "" {
+		return nil, ErrSecretKeyNotSet
+	}
+
+	claims := &tokenClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
 		return []byte(secretKey), nil
-	})
-
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	if !token.Valid {
-		return ErrInvalidKey
+	if !token.Valid || claims.Username == "" {
+		return nil, ErrInvalidKey
 	}
-
-	return nil
+	return claims, nil
 }
 
 func hashAndSalt(pwd []byte) (string, error) {

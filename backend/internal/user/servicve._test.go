@@ -13,7 +13,7 @@ func TestCreateToken(t *testing.T) {
 		secretKey = previousSecretKey
 	})
 
-	tokenString, err := createToken("alice")
+	tokenString, err := createToken("alice", UserRole)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestVerifyToken(t *testing.T) {
 		secretKey = previousSecretKey
 	})
 
-	tokenString, err := createToken("alice")
+	tokenString, err := createToken("alice", UserRole)
 	if err != nil {
 		t.Fatal(err)
 	}
