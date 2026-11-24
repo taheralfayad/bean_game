@@ -8,15 +8,16 @@ import (
 )
 
 type fakeStore struct {
-	variants     []GameVariant
-	listCalled   bool
-	listErr      error
-	inserted     GameVariant
-	insertCalled bool
-	insertErr    error
-	deleteID     uint16
-	deleteCalled bool
-	deleteErr    error
+	variants      []GameVariant
+	listCalled    bool
+	listErr       error
+	inserted      GameVariant
+	insertedHands []StartingHand
+	insertCalled  bool
+	insertErr     error
+	deleteID      uint16
+	deleteCalled  bool
+	deleteErr     error
 }
 
 func (f *fakeStore) ListVariants(ctx context.Context) ([]GameVariant, error) {
@@ -28,14 +29,19 @@ func (f *fakeStore) FindByPlayerCount(ctx context.Context, playerCount uint16) (
 	return nil, nil
 }
 
-func (f *fakeStore) InsertVariant(ctx context.Context, variant GameVariant) (*GameVariant, error) {
+func (f *fakeStore) InsertVariant(ctx context.Context, variant GameVariant, hands []StartingHand) (*GameVariant, error) {
 	f.insertCalled = true
 	f.inserted = variant
+	f.insertedHands = hands
 	if f.insertErr != nil {
 		return nil, f.insertErr
 	}
 	variant.Id = 7
 	return &variant, nil
+}
+
+func (f *fakeStore) FindStartingHandBySeat(ctx context.Context, variantId, seat uint16) (uint16, error) {
+	return 0, nil
 }
 
 func (f *fakeStore) DeleteVariant(ctx context.Context, id uint16) error {
@@ -44,9 +50,18 @@ func (f *fakeStore) DeleteVariant(ctx context.Context, id uint16) error {
 	return f.deleteErr
 }
 
+func handsFor(maxPlayers uint16) []StartingHand {
+	hands := make([]StartingHand, 0, maxPlayers)
+	for seat := uint16(1); seat <= maxPlayers; seat++ {
+		hands = append(hands, StartingHand{Seat: seat, CardCount: 2})
+	}
+	return hands
+}
+
 func TestCreateVariant(t *testing.T) {
 	store := &fakeStore{}
 	service := NewService(store)
+	hands := handsFor(5)
 
 	created, err := service.Create(context.Background(), GameVariant{
 		Slug:               "base_3_5",
@@ -55,7 +70,7 @@ func TestCreateVariant(t *testing.T) {
 		MaxPlayers:         5,
 		DeckId:             2,
 		EndOfTurnDrawCount: 3,
-	})
+	}, hands)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -80,6 +95,9 @@ func TestCreateVariant(t *testing.T) {
 	}
 	if store.inserted.EndOfTurnDrawCount != 3 {
 		t.Errorf("inserted draw count = %d, want 3", store.inserted.EndOfTurnDrawCount)
+	}
+	if len(store.insertedHands) != len(hands) || store.insertedHands[0] != hands[0] || store.insertedHands[4] != hands[4] {
+		t.Errorf("inserted hands = %v, want %v", store.insertedHands, hands)
 	}
 }
 
@@ -158,9 +176,62 @@ func TestCreateVariantValidation(t *testing.T) {
 			variant := valid
 			tt.mutate(&variant)
 
-			_, err := service.Create(context.Background(), variant)
+			_, err := service.Create(context.Background(), variant, handsFor(5))
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Create() error = %v, want %v", err, tt.wantErr)
+			}
+			if store.insertCalled {
+				t.Error("InsertVariant was called for invalid input")
+			}
+		})
+	}
+}
+
+func TestCreateVariantStartingHandsValidation(t *testing.T) {
+	valid := GameVariant{
+		Slug:               "base_3_5",
+		Name:               "Base",
+		MinPlayers:         3,
+		MaxPlayers:         5,
+		DeckId:             1,
+		EndOfTurnDrawCount: 3,
+	}
+
+	missingSeat := handsFor(5)[:4]
+
+	duplicateSeat := handsFor(5)
+	duplicateSeat[4].Seat = 1
+
+	seatZero := handsFor(5)
+	seatZero[0].Seat = 0
+
+	seatAboveMax := handsFor(5)
+	seatAboveMax[4].Seat = 6
+
+	zeroCardCount := handsFor(5)
+	zeroCardCount[0].CardCount = 0
+
+	tests := []struct {
+		name  string
+		hands []StartingHand
+	}{
+		{name: "nil hands", hands: nil},
+		{name: "empty hands", hands: []StartingHand{}},
+		{name: "missing seat", hands: missingSeat},
+		{name: "duplicate seat", hands: duplicateSeat},
+		{name: "seat zero", hands: seatZero},
+		{name: "seat above max", hands: seatAboveMax},
+		{name: "zero card count", hands: zeroCardCount},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeStore{}
+			service := NewService(store)
+
+			_, err := service.Create(context.Background(), valid, tt.hands)
+			if !errors.Is(err, ErrInvalidStartingHands) {
+				t.Fatalf("Create() error = %v, want %v", err, ErrInvalidStartingHands)
 			}
 			if store.insertCalled {
 				t.Error("InsertVariant was called for invalid input")
@@ -180,7 +251,7 @@ func TestCreateVariantStoreError(t *testing.T) {
 		MaxPlayers:         5,
 		DeckId:             1,
 		EndOfTurnDrawCount: 3,
-	})
+	}, handsFor(5))
 	if !errors.Is(err, storeErr) {
 		t.Fatalf("Create() error = %v, want %v", err, storeErr)
 	}
