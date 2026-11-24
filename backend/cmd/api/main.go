@@ -14,6 +14,7 @@ import (
 	"github.com/taheralfayad/bean_game/backend/internal/game"
 	"github.com/taheralfayad/bean_game/backend/internal/gameevents"
 	"github.com/taheralfayad/bean_game/backend/internal/gamevariant"
+	"github.com/taheralfayad/bean_game/backend/internal/user"
 )
 
 func main() {
@@ -59,12 +60,16 @@ func main() {
 		gameEventsBroker,
 	)
 
+	userHandler := user.NewHandler(user.NewService(user.NewStore(database)))
+
 	r := gin.Default()
-	beanHandler.Register(r)
-	deckHandler.Register(r)
-	gamevariantHandler.Register(r)
+	adminRoutes := r.Group("", user.AdminOnly())
+	beanHandler.Register(adminRoutes)
+	deckHandler.Register(adminRoutes)
+	gamevariantHandler.Register(adminRoutes)
 	gameHandler.Register(r)
 	gameeventsHandler.Register(r)
+	userHandler.Register(r)
 
 	if err := r.Run(); err != nil {
 		log.Fatalf("server failed: %v", err)
