@@ -9,3 +9,8 @@ type GameVariant struct {
 	DeckId             uint16 `json:"deck_id"`
 	EndOfTurnDrawCount uint16 `json:"end_of_turn_draw_count"`
 }
+
+type StartingHand struct {
+	Seat      uint16 `json:"seat"`
+	CardCount uint16 `json:"card_count"`
+}
