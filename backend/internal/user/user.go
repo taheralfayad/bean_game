@@ -10,6 +10,6 @@ const (
 type User struct {
 	Id       uint16 `json:"id"`
 	Username string `json:"username"`
-	Token    string `json:"token"`
+	Token    string `json:"-"`
 	Role     Role   `json:"role"`
 }

@@ -63,6 +63,7 @@ func main() {
 	userHandler := user.NewHandler(user.NewService(user.NewStore(database)))
 
 	r := gin.Default()
+	r.Use(user.Cors())
 	adminRoutes := r.Group("", user.AdminOnly())
 	beanHandler.Register(adminRoutes)
 	deckHandler.Register(adminRoutes)

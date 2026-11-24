@@ -3,20 +3,19 @@ package user
 import (
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 func AdminOnly() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authorization := strings.Fields(c.GetHeader("Authorization"))
-		if len(authorization) != 2 || !strings.EqualFold(authorization[0], "Bearer") {
+		cookie, err := c.Cookie("token")
+		if err != nil || cookie == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authorization token required"})
 			return
 		}
 
-		claims, err := parseToken(authorization[1])
+		claims, err := parseToken(cookie)
 		if err != nil {
 			if errors.Is(err, ErrSecretKeyNotSet) {
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal error"})

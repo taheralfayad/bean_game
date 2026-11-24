@@ -20,6 +20,7 @@ class Api {
             headers: {
                 'Content-Type': 'application/json',
             },
+            credentials: 'include',
             body: JSON.stringify({
                 username: username,
                 password: password
@@ -40,6 +41,7 @@ class Api {
             headers: {
                 'Content-Type': 'application/json',
             },
+            credentials: 'include',
             body: JSON.stringify({
                 username: username,
                 password: password
