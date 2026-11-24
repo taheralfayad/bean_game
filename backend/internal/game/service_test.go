@@ -31,7 +31,8 @@ type fakeStore struct {
 	startCalls     int
 	startedGameId  uint64
 	startedVariant uint16
-	startedCount   uint16
+	startedCards   map[uint64][]uint16
+	startedDeck    []uint16
 	startErrs      []error
 	startErr       error
 	beginCalled    bool
@@ -73,12 +74,13 @@ func (f *fakeStore) ListPlayers(ctx context.Context, gameId uint64) ([]Player, e
 	return f.players, f.listErr
 }
 
-func (f *fakeStore) StartGame(ctx context.Context, gameId uint64, variantId uint16, expectedPlayerCount uint16) (*Game, error) {
+func (f *fakeStore) StartGame(ctx context.Context, gameId uint64, variantId uint16, playerCards map[uint64][]uint16, remainingDeck []uint16) (*Game, error) {
 	f.startCalled = true
 	f.startCalls++
 	f.startedGameId = gameId
 	f.startedVariant = variantId
-	f.startedCount = expectedPlayerCount
+	f.startedCards = playerCards
+	f.startedDeck = remainingDeck
 	if len(f.startErrs) > 0 {
 		err := f.startErrs[0]
 		f.startErrs = f.startErrs[1:]
@@ -107,12 +109,20 @@ type fakeVariants struct {
 	err         error
 	playerCount uint16
 	called      bool
+	cardCount   uint16
+	handErr     error
+	handSeat    uint16
 }
 
 func (f *fakeVariants) FindByPlayerCount(ctx context.Context, playerCount uint16) (*gamevariant.GameVariant, error) {
 	f.called = true
 	f.playerCount = playerCount
 	return f.variant, f.err
+}
+
+func (f *fakeVariants) FindStartingHandBySeat(ctx context.Context, variantId, seat uint16) (uint16, error) {
+	f.handSeat = seat
+	return f.cardCount, f.handErr
 }
 
 type fakeDeckFinder struct {
@@ -229,41 +239,13 @@ func TestJoinGameAlreadyStarted(t *testing.T) {
 	}
 }
 
-func TestListPlayers(t *testing.T) {
-	want := []Player{{Id: 8, Seat: 1}, {Id: 9, Seat: 2}}
-	store := &fakeStore{players: want}
-	service := NewService(store, &fakeVariants{}, &fakeDeckFinder{}, &fakePublisher{})
-
-	got, err := service.ListPlayers(context.Background(), 12)
-	if err != nil {
-		t.Fatalf("ListPlayers() error = %v", err)
-	}
-	if !store.listCalled {
-		t.Fatal("ListPlayers was not called")
-	}
-	if store.listGameId != 12 {
-		t.Errorf("listed game id = %d, want 12", store.listGameId)
-	}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Errorf("ListPlayers() = %v, want %v", got, want)
-	}
-}
-
-func TestListPlayersError(t *testing.T) {
-	want := errors.New("db down")
-	store := &fakeStore{listErr: want}
-	service := NewService(store, &fakeVariants{}, &fakeDeckFinder{}, &fakePublisher{})
-
-	_, err := service.ListPlayers(context.Background(), 12)
-	if !errors.Is(err, want) {
-		t.Fatalf("ListPlayers() error = %v, want %v", err, want)
-	}
-}
-
 func TestStartGame(t *testing.T) {
-	store := &fakeStore{playerCount: 4}
-	variants := &fakeVariants{variant: &gamevariant.GameVariant{Id: 9, DeckId: 3}}
-	decks := &fakeDeckFinder{deck: &deck.Deck{Id: 3}}
+	store := &fakeStore{
+		playerCount: 4,
+		players:     []Player{{Id: 8, Seat: 1}, {Id: 9, Seat: 2}},
+	}
+	variants := &fakeVariants{variant: &gamevariant.GameVariant{Id: 9, DeckId: 3}, cardCount: 1}
+	decks := &fakeDeckFinder{deck: &deck.Deck{Id: 3, Beans: []deck.DeckBean{{BeanId: 5, CardCount: 2}}}}
 	publisher := &fakePublisher{}
 	service := NewService(store, variants, decks, publisher)
 
@@ -286,6 +268,17 @@ func TestStartGame(t *testing.T) {
 	}
 	if store.startedVariant != 9 {
 		t.Errorf("started variant = %d, want 9", store.startedVariant)
+	}
+	if len(store.startedCards) != 2 {
+		t.Fatalf("started hands = %d, want 2", len(store.startedCards))
+	}
+	for playerId, cards := range store.startedCards {
+		if len(cards) != 1 {
+			t.Errorf("player %d hand = %v, want 1 card", playerId, cards)
+		}
+	}
+	if len(store.startedDeck) != 0 {
+		t.Errorf("remaining deck = %v, want empty", store.startedDeck)
 	}
 	if !decks.called {
 		t.Fatal("FindByID was not called")
@@ -350,41 +343,22 @@ func TestStartGameVariantNotFound(t *testing.T) {
 	}
 }
 
-func TestStartGameRetriesOnPlayerCountChange(t *testing.T) {
-	store := &fakeStore{counts: []uint16{4, 5}, startErrs: []error{ErrPlayersChanged}}
-	variants := &fakeVariants{variant: &gamevariant.GameVariant{Id: 9}}
+func TestStartGameNotEnoughCards(t *testing.T) {
+	store := &fakeStore{
+		playerCount: 4,
+		players:     []Player{{Id: 8, Seat: 1}, {Id: 9, Seat: 2}},
+	}
+	variants := &fakeVariants{variant: &gamevariant.GameVariant{Id: 9, DeckId: 3}, cardCount: 2}
+	decks := &fakeDeckFinder{deck: &deck.Deck{Id: 3, Beans: []deck.DeckBean{{BeanId: 5, CardCount: 3}}}}
 	publisher := &fakePublisher{}
-	service := NewService(store, variants, &fakeDeckFinder{}, publisher)
-
-	game, err := service.StartGame(context.Background(), 12)
-	if err != nil {
-		t.Fatalf("StartGame() error = %v", err)
-	}
-	if store.startCalls != 2 {
-		t.Fatalf("StartGame calls = %d, want 2", store.startCalls)
-	}
-	if store.startedCount != 5 {
-		t.Errorf("started count = %d, want 5", store.startedCount)
-	}
-	if game.VariantId == nil || *game.VariantId != 9 {
-		t.Errorf("VariantId = %v, want 9", game.VariantId)
-	}
-	if len(publisher.events) != 1 {
-		t.Fatalf("published events = %d, want 1", len(publisher.events))
-	}
-}
-
-func TestStartGameGivesUpAfterPlayerCountChanges(t *testing.T) {
-	store := &fakeStore{playerCount: 4, startErrs: []error{ErrPlayersChanged, ErrPlayersChanged, ErrPlayersChanged}}
-	publisher := &fakePublisher{}
-	service := NewService(store, &fakeVariants{variant: &gamevariant.GameVariant{Id: 9}}, &fakeDeckFinder{}, publisher)
+	service := NewService(store, variants, decks, publisher)
 
 	_, err := service.StartGame(context.Background(), 12)
-	if !errors.Is(err, ErrPlayersChanged) {
-		t.Fatalf("error = %v, want %v", err, ErrPlayersChanged)
+	if !errors.Is(err, ErrNotEnoughCards) {
+		t.Fatalf("error = %v, want %v", err, ErrNotEnoughCards)
 	}
-	if store.startCalls != startGameAttempts {
-		t.Errorf("StartGame calls = %d, want %d", store.startCalls, startGameAttempts)
+	if store.startCalled {
+		t.Fatal("StartGame was called with an undersized deck")
 	}
 	if len(publisher.events) != 0 {
 		t.Fatalf("published events = %d, want 0", len(publisher.events))
@@ -412,7 +386,8 @@ func TestStartGameStoreError(t *testing.T) {
 	want := ErrGameStarted
 	store := &fakeStore{playerCount: 4, startErr: want}
 	variants := &fakeVariants{variant: &gamevariant.GameVariant{Id: 9}}
-	service := NewService(store, variants, &fakeDeckFinder{}, &fakePublisher{})
+	decks := &fakeDeckFinder{deck: &deck.Deck{Id: 3}}
+	service := NewService(store, variants, decks, &fakePublisher{})
 
 	_, err := service.StartGame(context.Background(), 12)
 	if !errors.Is(err, want) {

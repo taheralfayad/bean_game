@@ -14,12 +14,13 @@ type Handler struct {
 }
 
 type createRequest struct {
-	Slug               string `json:"slug" binding:"required"`
-	Name               string `json:"name" binding:"required"`
-	MinPlayers         uint16 `json:"min_players" binding:"required"`
-	MaxPlayers         uint16 `json:"max_players" binding:"required"`
-	DeckId             uint16 `json:"deck_id" binding:"required"`
-	EndOfTurnDrawCount uint16 `json:"end_of_turn_draw_count" binding:"required"`
+	Slug               string         `json:"slug" binding:"required"`
+	Name               string         `json:"name" binding:"required"`
+	MinPlayers         uint16         `json:"min_players" binding:"required"`
+	MaxPlayers         uint16         `json:"max_players" binding:"required"`
+	DeckId             uint16         `json:"deck_id" binding:"required"`
+	EndOfTurnDrawCount uint16         `json:"end_of_turn_draw_count" binding:"required"`
+	StartingHands      []StartingHand `json:"starting_hands" binding:"required,dive"`
 }
 
 func NewHandler(service *Service) *Handler { return &Handler{service: service} }
@@ -47,7 +48,7 @@ func (h *Handler) list(c *gin.Context) {
 func (h *Handler) create(c *gin.Context) {
 	var req createRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "slug, name, min_players, max_players, deck_id and end_of_turn_draw_count are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "slug, name, min_players, max_players, deck_id, end_of_turn_draw_count and starting_hands are required"})
 		return
 	}
 
@@ -58,7 +59,7 @@ func (h *Handler) create(c *gin.Context) {
 		MaxPlayers:         req.MaxPlayers,
 		DeckId:             req.DeckId,
 		EndOfTurnDrawCount: req.EndOfTurnDrawCount,
-	})
+	}, req.StartingHands)
 	if err != nil {
 		h.writeCreateError(c, err)
 		return
@@ -89,7 +90,8 @@ func (h *Handler) writeCreateError(c *gin.Context, err error) {
 	case errors.Is(err, ErrInvalidSlug),
 		errors.Is(err, ErrInvalidName),
 		errors.Is(err, ErrInvalidPlayers),
-		errors.Is(err, ErrInvalidDrawCount):
+		errors.Is(err, ErrInvalidDrawCount),
+		errors.Is(err, ErrInvalidStartingHands):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 	case errors.As(err, &pgErr) && pgErr.Code == "23505":
 		c.JSON(http.StatusConflict, gin.H{"error": "game variant slug already exists"})

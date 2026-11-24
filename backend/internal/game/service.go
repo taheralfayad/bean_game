@@ -12,12 +12,14 @@ import (
 	"github.com/taheralfayad/bean_game/backend/internal/gamevariant"
 )
 
+var ErrNotEnoughCards = errors.New("not enough cards to deal starting hands")
+
 type gameStore interface {
 	CreateGame(ctx context.Context) (*Game, *Player, error)
 	JoinGame(ctx context.Context, gameId uint64) (*Player, error)
 	CountPlayers(ctx context.Context, gameId uint64) (uint16, error)
 	ListPlayers(ctx context.Context, gameId uint64) ([]Player, error)
-	StartGame(ctx context.Context, gameId uint64, variantId, playerCount uint16) (*Game, error)
+	StartGame(ctx context.Context, gameId uint64, variantId uint16, playerCards map[uint64][]uint16, remainingDeck []uint16) (*Game, error)
 	BeginGameStart(ctx context.Context, gameId uint64) error
 	AbortGameStart(ctx context.Context, gameId uint64) error
 }
@@ -111,7 +113,7 @@ func (s *Service) StartGame(ctx context.Context, gameId uint64) (game *Game, err
 
 	shuffledCards := shuffleCards(gameCards)
 
-	players, err := s.store.ListPlayers(ctx, game.Id)
+	players, err := s.store.ListPlayers(ctx, gameId)
 
 	if err != nil {
 		return nil, err
@@ -127,7 +129,7 @@ func (s *Service) StartGame(ctx context.Context, gameId uint64) (game *Game, err
 		}
 
 		if numCards > uint16(len(shuffledCards)) {
-			return nil, fmt.Errorf("not enough cards to deal %d to seat %d", numCards, player.Seat)
+			return nil, fmt.Errorf("%w: seat %d needs %d, deck has %d left", ErrNotEnoughCards, player.Seat, numCards, len(shuffledCards))
 		}
 
 		playersCards[player.Id] = shuffledCards[:numCards:numCards]
@@ -135,7 +137,7 @@ func (s *Service) StartGame(ctx context.Context, gameId uint64) (game *Game, err
 		shuffledCards = shuffledCards[numCards:]
 	}
 
-	game, err = s.store.StartGame(ctx, gameId, variant.Id, playerCount)
+	game, err = s.store.StartGame(ctx, gameId, variant.Id, playersCards, shuffledCards)
 	if err != nil {
 		return nil, err
 	}

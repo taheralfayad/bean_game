@@ -160,22 +160,33 @@ func (s *Store) ListPlayers(ctx context.Context, gameId uint64) ([]Player, error
 	return players, nil
 }
 
-func (s *Store) StartGame(ctx context.Context, gameId uint64, variantId uint16, playerCount uint16) (*Game, error) {
+func (s *Store) StartGame(ctx context.Context, gameId uint64, variantId uint16, playerCards map[uint64][]uint16, remainingDeck []uint16) (*Game, error) {
 	var game Game
-	if err := s.db.QueryRowContext(ctx, `
-		UPDATE games
-		SET variant_id = $2, state = 'started'
-		WHERE id = $1
-		RETURNING id, shuffle_number, current_seat, current_phase, variant_id, state
-	`, gameId, variantId).Scan(
-		&game.Id,
-		&game.ShuffleNumber,
-		&game.CurrentSeat,
-		&game.CurrentPhase,
-		&game.VariantId,
-		&game.State,
-	); err != nil {
-		return nil, fmt.Errorf("start game: %w", err)
+	err := s.WithTx(ctx, func(tx *Store) error {
+		if err := tx.insertCardsAtGameStart(ctx, gameId, playerCards, remainingDeck); err != nil {
+			return err
+		}
+
+		if err := tx.q.QueryRowContext(ctx, `
+			UPDATE games
+			SET variant_id = $2, state = 'started'
+			WHERE id = $1
+			RETURNING id, shuffle_number, current_seat, current_phase, variant_id, state
+		`, gameId, variantId).Scan(
+			&game.Id,
+			&game.ShuffleNumber,
+			&game.CurrentSeat,
+			&game.CurrentPhase,
+			&game.VariantId,
+			&game.State,
+		); err != nil {
+			return fmt.Errorf("start game: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return &game, nil
@@ -255,31 +266,19 @@ func (s *Store) GameState(ctx context.Context, gameId uint64) (State, error) {
 	return state, nil
 }
 
-func (s *Store) InsertCardsAtGameStart(ctx context.Context, gameId uint64, playerCards map[uint64][]uint16, remainingDeck []uint16) error {
-	err := s.WithTx(ctx, func(tx *Store) error {
-		for playerId, cards := range playerCards {
-			for position, beanId := range cards {
-				err := s.insertPlayerCard(ctx, gameId, playerId, beanId, position)
-
-				if err != nil {
-					return fmt.Errorf("insert cards: %w", err)
-				}
-			}
-		}
-
-		for position, beanId := range remainingDeck {
-			err := s.insertRemainingDeck(ctx, gameId, beanId, position)
-
-			if err != nil {
+func (s *Store) insertCardsAtGameStart(ctx context.Context, gameId uint64, playerCards map[uint64][]uint16, remainingDeck []uint16) error {
+	for playerId, cards := range playerCards {
+		for position, beanId := range cards {
+			if err := s.insertPlayerCard(ctx, gameId, playerId, beanId, position); err != nil {
 				return fmt.Errorf("insert cards: %w", err)
 			}
 		}
+	}
 
-		return nil
-	})
-
-	if err != nil {
-		return err
+	for position, beanId := range remainingDeck {
+		if err := s.insertRemainingDeck(ctx, gameId, beanId, position); err != nil {
+			return fmt.Errorf("insert cards: %w", err)
+		}
 	}
 
 	return nil
